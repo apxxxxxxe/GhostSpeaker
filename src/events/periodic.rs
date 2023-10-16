@@ -1,8 +1,7 @@
 use crate::events::common::*;
 use crate::queue::{get_queue, PredictArgs};
 use crate::response::PluginResponse;
-use crate::speaker::{get_speakers_info, SpeakerInfo};
-use crate::variables::get_global_vars;
+use crate::variables::{get_global_vars, CharacterVoice};
 use regex::Regex;
 use shiorust::message::Request;
 
@@ -21,6 +20,7 @@ pub fn on_second_change(req: &Request) -> PluginResponse {
 
 pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
     let refs = get_references(req);
+    let ghost_name = refs[0].to_string();
     let msg = refs[4].to_string();
     if msg.is_empty() {
         return new_response_nocontent();
@@ -32,16 +32,30 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
 
     let dialog = sakura_script_re.replace_all(&msg, "").to_string();
     if !dialog.is_empty() {
-        let info = &get_global_vars().volatility.speakers_info;
-        let speaker = info.get(0).unwrap();
-        let speaker_uuid = String::from(&speaker.speaker_uuid);
-        let style_id = speaker.styles.get(0).unwrap().style_id.unwrap();
+        let info = &get_global_vars().ghosts_voices.get(&ghost_name).unwrap();
+        let speaker = info.get(0).unwrap(); // TODO: 話者ごとに変える
         let args = PredictArgs {
             text: dialog,
-            speaker_uuid,
-            style_id,
+            speaker_uuid: speaker.spekaer_uuid.clone(),
+            style_id: speaker.style_id,
         };
         get_queue().push_to_prediction(args); // TODO: 段落もしくは句点ごとに分割してpushする
+    }
+
+    new_response_nocontent()
+}
+
+pub fn on_ghost_boot(req: &Request) -> PluginResponse {
+    let refs = get_references(req);
+    let ghost_name = refs[1].to_string();
+    let path = refs[4].to_string();
+    let description = load_descript(path);
+    let characters = count_characters(description);
+
+    if let None = get_global_vars().ghosts_voices.get(&ghost_name) {
+        let mut vec = Vec::new();
+        vec.resize(characters.len(), CharacterVoice::default());
+        get_global_vars().ghosts_voices.insert(ghost_name, vec);
     }
 
     new_response_nocontent()

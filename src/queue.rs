@@ -45,9 +45,10 @@ impl Queue {
             if *thread_stopper_a.lock().unwrap() {
                 break;
             }
-            let mut guard = predict_queue.lock().unwrap();
-            let args = guard.pop_front();
-            drop(guard);
+            let args = {
+                let mut guard = predict_queue.lock().unwrap();
+                guard.pop_front()
+            };
             if let Some(args) = args {
                 println!("{}", format!("predict_and_play: {}", args.text));
                 predict_and_queue(args);
@@ -62,9 +63,10 @@ impl Queue {
             if *thread_stopper_b.lock().unwrap() {
                 break;
             }
-            let mut guard = play_queue.lock().unwrap();
-            let data = guard.pop_front();
-            drop(guard);
+            let data = {
+                let mut guard = play_queue.lock().unwrap();
+                guard.pop_front()
+            };
             if let Some(data) = data {
                 println!("{}", format!("play: {}", data.len()));
                 play_wav(data);

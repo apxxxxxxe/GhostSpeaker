@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::speaker::{get_speakers_info, SpeakerInfo};
@@ -17,6 +18,9 @@ pub struct GlobalVariables {
     // ユーザ名
     pub user_name: Option<String>,
 
+    // ゴーストごとの声の情報
+    pub ghosts_voices: HashMap<String, Vec<CharacterVoice>>,
+
     // 起動ごとにリセットされる変数
     #[serde(skip)]
     pub volatility: VolatilityVariables,
@@ -28,6 +32,7 @@ impl GlobalVariables {
             total_time: Some(0),
             random_talk_interval: Some(180),
             user_name: Some("ユーザ".to_string()),
+            ghosts_voices: HashMap::new(),
             volatility: VolatilityVariables::default(),
         };
 
@@ -105,8 +110,26 @@ impl Direction {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CharacterVoice {
+    pub spekaer_uuid: String,
+    pub style_id: i32,
+}
+
+impl Default for CharacterVoice {
+    fn default() -> Self {
+        // つくよみちゃん-れいせい
+        CharacterVoice {
+            spekaer_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
+            style_id: 0,
+        }
+    }
+}
+
 // ゴーストのグローバル変数のうち、揮発性(起動毎にリセットされる)なもの
 pub struct VolatilityVariables {
+    pub plugin_uuid: String,
+
     // ゴーストが起動してからの秒数
     pub ghost_up_time: u64,
 
@@ -143,6 +166,7 @@ pub struct VolatilityVariables {
 impl Default for VolatilityVariables {
     fn default() -> Self {
         Self {
+            plugin_uuid: "1e1e0813-f16f-409e-b870-2c36b9084732".to_string(),
             ghost_up_time: 0,
             ghost_boot_time: SystemTime::now(),
             nade_counter: 0,

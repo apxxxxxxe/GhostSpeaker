@@ -111,7 +111,6 @@ pub fn predict_text(text: String, speaker_uuid: String, style_id: i32) -> Result
         Ok(res) => match res.status() {
             StatusCode::OK => {
                 predict_res = serde_json::from_str(&res.text().unwrap()).unwrap();
-                println!("Success: {:?}", predict_res);
             }
             _ => {
                 println!("Error: {:?}", res);
