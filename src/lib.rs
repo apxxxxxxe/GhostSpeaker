@@ -1,4 +1,5 @@
 mod events;
+mod format;
 mod player;
 mod predict;
 mod queue;

@@ -1,8 +1,8 @@
 use crate::events::common::*;
+use crate::format::*;
 use crate::queue::{get_queue, PredictArgs};
 use crate::response::PluginResponse;
 use crate::variables::{get_global_vars, CharacterVoice};
-use regex::Regex;
 use shiorust::message::Request;
 
 pub fn on_second_change(req: &Request) -> PluginResponse {
@@ -26,16 +26,14 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
         return new_response_nocontent();
     }
 
-    let sakura_script_re =
-        Regex::new(r###"\\_{0,2}[a-zA-Z0-9*!&](\d|\[("([^"]|\\")+?"|([^\]]|\\\])+?)+?\])?"###)
-            .unwrap();
-
-    let dialog = sakura_script_re.replace_all(&msg, "").to_string();
-    if !dialog.is_empty() {
+    for dialog in split_dialog(msg) {
+        if dialog.text.is_empty() {
+            continue;
+        }
         let info = &get_global_vars().ghosts_voices.get(&ghost_name).unwrap();
-        let speaker = info.get(0).unwrap(); // TODO: 話者ごとに変える
+        let speaker = info.get(dialog.scope as usize).unwrap();
         let args = PredictArgs {
-            text: dialog,
+            text: dialog.text,
             speaker_uuid: speaker.spekaer_uuid.clone(),
             style_id: speaker.style_id,
         };

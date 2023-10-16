@@ -141,13 +141,16 @@ pub fn load_descript(file_path: String) -> HashMap<String, String> {
         }
         let mut iter = line.split(",");
         let key = iter.next().unwrap().to_string();
-        let value = iter.next().unwrap().to_string();
+        let mut value = iter.next().unwrap().to_string();
+        while let Some(v) = iter.next() {
+            value.push_str(v);
+        }
         descript.insert(key, value);
     }
     descript
 }
 
-pub fn count_characters(ghost_description: HashMap<String,String>) -> Vec<String> {
+pub fn count_characters(ghost_description: HashMap<String, String>) -> Vec<String> {
     let mut characters = Vec::new();
     if let Some(sakura) = ghost_description.get("sakura.name") {
         characters.push(sakura.to_string());
