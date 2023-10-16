@@ -8,10 +8,29 @@ pub struct Dialog {
 pub fn split_dialog(src: String) -> Vec<Dialog> {
     let mut s = src.clone();
     s = delete_quick_section(s);
-    let mut result = split_dialog_local(s);
-    for r in result.iter_mut() {
+    let mut raws = split_dialog_local(s);
+    for r in raws.iter_mut() {
         r.text = clear_tags(r.text.clone());
     }
+
+    let delims_re = Regex::new(r"[！!?？。]").unwrap();
+    let mut result = Vec::new();
+    for r in raws {
+        if r.text.is_empty() {
+            continue;
+        }
+        let t = delims_re.replace_all(&r.text, "$0\u{0}");
+        for text in t.split('\u{0}') {
+            if text.is_empty() {
+                continue;
+            }
+            result.push(Dialog {
+                text: text.to_string(),
+                scope: r.scope,
+            });
+        }
+    }
+
     result
 }
 
@@ -62,17 +81,6 @@ fn clear_tags(src: String) -> String {
 
 fn delete_quick_section(src: String) -> String {
     const NOT_FOUND_INDEX: usize = 10000;
-    let get_min_index = |arr: Vec<Option<usize>>| -> usize {
-        let mut min = NOT_FOUND_INDEX;
-        for i in arr {
-            if let Some(i) = i {
-                if i < min {
-                    min = i;
-                }
-            }
-        }
-        min
-    };
 
     // 最も早く見つかったクイックセクションの開始位置を取得
     // (index, tag_length)
@@ -152,10 +160,7 @@ mod test {
 
     #[test]
     fn test_quicksection() {
-        // let src = "\\0aaa\\![quicksection,1]bbb\\![quicksection,false]\\1ccc\\_qddd".to_string();
-        let src = "\
-        \\1\\s[10]\\1\\_w[24]\\n[half]\\0\\_w[6]\\s[5]…\\w9…\\w9昔の事を思い出すと、\\w9\\n\\_w[72]\\_w[72]やっぱり、\\w9\\_w[30]\\_w[30]時代の流れを感じますね。\\w9\\w6\\w9\\n\\_w[72]\\_w[72]\\s[21]まだまだ若輩ですけど、\\w9\\n\\_w[66]\\_w[66]とはいえ、\\w9\\_w[30]\\_w[30]もう医師としての人生も２０年…\\w9…\\w9。\\w9\\w6\\w9\\n\\w9\\n\\_w[102]\\_w[102]…\\w9…\\w9あの頃は…\\w9…\\w9本当、\\w9\\n\\_w[66]\\_w[66]みんな吸ってましたねえ…\\w9…\\w9タバコ。\\w9\\w6\\w9\\n\\w9\\n\\_w[102]\\_w[102]秘密にしておいてよかったです。\\w9\\w6\\_w[90]\\_w[90]本当に。\\w9\\w6\\w9\\e
-            ".to_string();
+        let src = "\\0aaa\\![quicksection,1]bbb\\![quicksection,false]\\1ccc\\_qddd".to_string();
         let result = delete_quick_section(src.to_string());
         println!("src: {}\nresult: {}", src, result);
     }
