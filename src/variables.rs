@@ -31,18 +31,21 @@ impl GlobalVariables {
     }
 
     pub fn load(&mut self) {
-        let json_str = match std::fs::read_to_string(VAR_PATH) {
+        let path =
+            std::path::Path::new(get_global_vars().volatility.dll_dir.as_str()).join(VAR_PATH);
+        debug!("Loading variables from {}", path.display());
+        let json_str = match std::fs::read_to_string(path) {
             Ok(s) => s,
-            Err(_) => {
-                error!("Failed to load variables.");
+            Err(e) => {
+                error!("Failed to load variables. {}", e);
                 return;
             }
         };
 
         let vars: GlobalVariables = match serde_json::from_str(&json_str) {
             Ok(v) => v,
-            Err(_) => {
-                error!("Failed to parse variables.");
+            Err(e) => {
+                error!("Failed to parse variables. {}", e);
                 return;
             }
         };
@@ -54,23 +57,29 @@ impl GlobalVariables {
         if let Some(g) = vars.ghosts_voices {
             self.ghosts_voices = Some(g);
         }
+
+        let path =
+            std::path::Path::new(get_global_vars().volatility.dll_dir.as_str()).join(VAR_PATH);
+        debug!("Loaded variables from {}", path.display());
     }
 
     pub fn save(&self) {
         let json_str = match serde_json::to_string(self) {
             Ok(s) => s,
-            Err(_) => {
-                error!("Failed to serialize variables");
+            Err(e) => {
+                error!("Failed to serialize variables. {}", e);
                 return;
             }
         };
         match std::fs::write(VAR_PATH, json_str) {
             Ok(_) => (),
-            Err(_) => {
-                error!("Failed to save variables");
+            Err(e) => {
+                error!("Failed to save variables. {}", e);
                 return;
             }
         };
+
+        debug!("Saved variables");
     }
 }
 
@@ -103,6 +112,9 @@ impl Default for CharacterVoice {
 pub struct VolatilityVariables {
     pub plugin_uuid: String,
 
+    // プラグインのディレクトリ
+    pub dll_dir: String,
+
     pub speakers_info: Vec<SpeakerInfo>,
 }
 
@@ -110,7 +122,15 @@ impl Default for VolatilityVariables {
     fn default() -> Self {
         Self {
             plugin_uuid: "1e1e0813-f16f-409e-b870-2c36b9084732".to_string(),
+            dll_dir: "".to_string(),
             speakers_info: get_speakers_info().unwrap(), // TODO: ちゃんとエラー処理
         }
     }
+}
+
+#[test]
+fn load() {
+    let vars = get_global_vars();
+    vars.load();
+    println!("{:?}", get_global_vars().volume);
 }

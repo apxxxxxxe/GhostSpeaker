@@ -89,13 +89,15 @@ fn register_dll_path(h_module: HINSTANCE) {
 }
 
 #[no_mangle]
-pub extern "cdecl" fn load(h: HGLOBAL, _len: c_long) -> BOOL {
+pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
+    let v = GStr::capture(h, len as usize);
+    let s = v.to_utf8_str().unwrap();
     unsafe { GlobalFree(h) };
 
     debug!("load");
 
+    get_global_vars().volatility.dll_dir = s.to_string();
     get_global_vars().load();
-    // init_player();
 
     return TRUE;
 }

@@ -16,7 +16,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let chara_info = |name: &String, index: usize| -> String {
         let mut info = format!("\\\\{} ", index);
         if let Some(c) = characters.get(index) {
-            info.push_str(&format!("{}: ", c));
+            info.push_str(&format!("{}:\\n    ", c));
         }
         let mut voice = String::from(DEFAULT_VOICE);
         if let Some(si) = get_global_vars().ghosts_voices.as_ref().unwrap().get(name) {
@@ -56,25 +56,28 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     }
 
     let path_for_arg = refs[4].to_string().replace("\\", "\\\\");
-    let volume_changer = format!(
-        "\
-        \\q[-0.1,OnVolumeChange,-0.1,{},{}] {:.1} \
-        \\q[0.1,OnVolumeChange,0.1,{},{}]\\n\
-        ",
-        refs[1],
-        path_for_arg,
-        get_global_vars().volume.unwrap(),
-        refs[1],
-        path_for_arg,
-    );
+    let unit: f32 = 0.05;
+    let v = get_global_vars().volume.unwrap();
+    let mut volume_changer = String::new();
+    if v > unit {
+        volume_changer.push_str(&format!(
+            "\\q[<<,OnVolumeChange,-{},{},{}]",
+            unit, refs[1], path_for_arg,
+        ));
+    }
+    volume_changer.push_str(&format!(
+        " {:.2} \
+            \\q[>>,OnVolumeChange,{},{},{}]\\n\
+            ",
+        v, unit, refs[1], path_for_arg,
+    ));
 
     let m = format!(
         "\
     \\_q\
     {}\\n\
     {}\\n\
-    \\![*]音量調整(共通)\\n\
-    {}\
+    \\![*]音量調整(共通) {}\
     \\n\\q[×,]\
     ",
         ghost_name, characters_info, volume_changer
@@ -150,7 +153,7 @@ pub fn on_volume_change(req: &Request) -> PluginResponse {
     let v = vars.volume.unwrap_or(1.0);
     vars.volume = Some(v + volume);
     let script = format!(
-        "\\![raise_plugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+        "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
         vars.volatility.plugin_uuid, refs[1], refs[2]
     );
     new_response_with_script(script, false)

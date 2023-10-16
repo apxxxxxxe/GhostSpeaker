@@ -33,7 +33,7 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
             speaker_uuid: speaker.spekaer_uuid.clone(),
             style_id: speaker.style_id,
         };
-        get_queue().push_to_prediction(args); // TODO: 段落もしくは句点ごとに分割してpushする
+        get_queue().push_to_prediction(args);
     }
 
     new_response_nocontent()

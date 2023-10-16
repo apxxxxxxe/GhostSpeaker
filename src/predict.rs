@@ -88,7 +88,11 @@ pub struct ProsodyDetail {
     pub accent: i32,
 }
 
-pub fn predict_text(text: String, speaker_uuid: String, style_id: i32) -> Result<Wave, reqwest::Error> {
+pub fn predict_text(
+    text: String,
+    speaker_uuid: String,
+    style_id: i32,
+) -> Result<Wave, reqwest::Error> {
     const URL: &str = "http://localhost:50032/v1/predict_with_duration";
 
     let req = PredictRequest {

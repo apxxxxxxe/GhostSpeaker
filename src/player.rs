@@ -1,5 +1,6 @@
 use std::io::BufReader;
 use std::io::Cursor;
+use std::sync::Mutex;
 
 use rodio::{Decoder, OutputStream, Sink};
 
@@ -10,7 +11,7 @@ pub struct Wave {
     pub duration_ms: u64,
 }
 
-pub fn play_wav(wav: Vec<u8>) {
+pub fn play_wav(wav: Vec<u8>, pauser: &Mutex<bool>) {
     // Get a output stream handle to the default physical sound device
     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
     let sink = Sink::try_new(&stream_handle).unwrap();
@@ -22,5 +23,12 @@ pub fn play_wav(wav: Vec<u8>) {
     sink.append(source);
 
     // Wait until the sound has finished playing or has been stopped manually
-    sink.sleep_until_end();
+    while sink.empty() == false {
+        if *pauser.lock().unwrap() == true {
+            sink.clear();
+            sink.pause();
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }

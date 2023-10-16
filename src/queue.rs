@@ -59,6 +59,7 @@ impl Queue {
 
         let play_queue = self.play_queue.clone();
         let thread_stopper_b = self.thread_stopper.clone();
+        let thread_stopper_c = self.thread_stopper.clone();
         self.play_join_handle = Some(thread::spawn(move || loop {
             if *thread_stopper_b.lock().unwrap() {
                 break;
@@ -69,7 +70,7 @@ impl Queue {
             };
             if let Some(data) = data {
                 println!("{}", format!("play: {}", data.len()));
-                play_wav(data);
+                play_wav(data, &thread_stopper_c);
             } else {
                 thread::sleep(Duration::from_millis(100));
             }
