@@ -9,7 +9,7 @@ const DEFAULT_VOICE: &str = "default";
 
 pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let refs = get_references(req);
-    let ghost_name = refs.get(1).unwrap();
+    let ghost_name = refs.get(1).unwrap().to_string();
     let ghost_description = load_descript(refs.get(4).unwrap().to_string());
     let characters = count_characters(ghost_description);
 
@@ -19,7 +19,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
             info.push_str(&format!("{}: ", c));
         }
         let mut voice = String::from(DEFAULT_VOICE);
-        if let Some(si) = get_global_vars().ghosts_voices.get(name) {
+        if let Some(si) = get_global_vars().ghosts_voices.as_ref().unwrap().get(name) {
             if let Some(c) = si.get(index) {
                 if let Some(speaker) = get_global_vars()
                     .volatility
@@ -52,18 +52,32 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
 
     let mut characters_info = String::new();
     for i in 0..characters.len() {
-        characters_info.push_str(&chara_info(&String::from(*ghost_name), i));
+        characters_info.push_str(&chara_info(&ghost_name, i));
     }
+
+    let path_for_arg = refs[4].to_string().replace("\\", "\\\\");
+    let volume_changer = format!(
+        "\
+        \\q[-0.1,OnVolumeChange,-0.1,{},{}] {:.1} \
+        \\q[0.1,OnVolumeChange,0.1,{},{}]\\n\
+        ",
+        refs[1],
+        path_for_arg,
+        get_global_vars().volume.unwrap(),
+        refs[1],
+        path_for_arg,
+    );
 
     let m = format!(
         "\
     \\_q\
     {}\\n\
+    {}\\n\
+    \\![*]音量調整(共通)\\n\
     {}\
-    \\![*]\\q[なにか話して,OnAiTalk]\
-    \\_l[0,10em]\\q[×,]\
+    \\n\\q[×,]\
     ",
-        ghost_name, characters_info
+        ghost_name, characters_info, volume_changer
     );
 
     new_response_with_script(m.to_string(), true)
@@ -106,7 +120,12 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
         style_id: style_id.to_string().parse::<i32>().unwrap(),
     };
 
-    if let Some(info) = get_global_vars().ghosts_voices.get_mut(*ghost_name) {
+    if let Some(info) = get_global_vars()
+        .ghosts_voices
+        .as_mut()
+        .unwrap()
+        .get_mut(*ghost_name)
+    {
         if info.len() - 1 < character_index {
             info.resize(character_index + 1, CharacterVoice::default());
         }
@@ -117,9 +136,24 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
         v.insert(character_index, voice);
         get_global_vars()
             .ghosts_voices
+            .as_mut()
+            .unwrap()
             .insert(ghost_name.to_string(), v);
     }
     new_response_with_script("\\_q設定しました。".to_string(), true)
+}
+
+pub fn on_volume_change(req: &Request) -> PluginResponse {
+    let refs = get_references(req);
+    let volume: f32 = refs.get(0).unwrap().parse().unwrap();
+    let vars = get_global_vars();
+    let v = vars.volume.unwrap_or(1.0);
+    vars.volume = Some(v + volume);
+    let script = format!(
+        "\\![raise_plugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+        vars.volatility.plugin_uuid, refs[1], refs[2]
+    );
+    new_response_with_script(script, false)
 }
 
 #[cfg(test)]

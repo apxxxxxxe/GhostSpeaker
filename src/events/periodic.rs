@@ -5,16 +5,7 @@ use crate::response::PluginResponse;
 use crate::variables::{get_global_vars, CharacterVoice};
 use shiorust::message::Request;
 
-pub fn on_second_change(req: &Request) -> PluginResponse {
-    let vars = get_global_vars();
-    let total_time = vars.total_time.unwrap();
-    vars.total_time = Some(total_time + 1);
-    vars.volatility.ghost_up_time += 1;
-
-    let refs = get_references(req);
-    let idle_secs = refs[4].parse::<i32>().unwrap();
-    vars.volatility.idle_seconds = idle_secs;
-
+pub fn on_second_change(_req: &Request) -> PluginResponse {
     new_response_nocontent()
 }
 
@@ -30,7 +21,12 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
         if dialog.text.is_empty() {
             continue;
         }
-        let info = &get_global_vars().ghosts_voices.get(&ghost_name).unwrap();
+        let info = &get_global_vars()
+            .ghosts_voices
+            .as_ref()
+            .unwrap()
+            .get(&ghost_name)
+            .unwrap();
         let speaker = info.get(dialog.scope as usize).unwrap();
         let args = PredictArgs {
             text: dialog.text,
@@ -50,10 +46,19 @@ pub fn on_ghost_boot(req: &Request) -> PluginResponse {
     let description = load_descript(path);
     let characters = count_characters(description);
 
-    if let None = get_global_vars().ghosts_voices.get(&ghost_name) {
+    if let None = get_global_vars()
+        .ghosts_voices
+        .as_ref()
+        .unwrap()
+        .get(&ghost_name)
+    {
         let mut vec = Vec::new();
         vec.resize(characters.len(), CharacterVoice::default());
-        get_global_vars().ghosts_voices.insert(ghost_name, vec);
+        get_global_vars()
+            .ghosts_voices
+            .as_mut()
+            .unwrap()
+            .insert(ghost_name, vec);
     }
 
     new_response_nocontent()

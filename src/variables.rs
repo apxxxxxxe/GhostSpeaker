@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::speaker::{get_speakers_info, SpeakerInfo};
 
@@ -9,17 +8,13 @@ static mut GLOBALVARS: Option<GlobalVariables> = None;
 
 #[derive(Serialize, Deserialize)]
 pub struct GlobalVariables {
-    // ゴーストの累計起動時間(秒数)
-    pub total_time: Option<u64>,
+    // 変数を追加した場合はloadの中身も変更することを忘れないように
 
-    // ランダムトークの間隔(秒数)
-    pub random_talk_interval: Option<u64>,
-
-    // ユーザ名
-    pub user_name: Option<String>,
+    // 読み上げ音量
+    pub volume: Option<f32>,
 
     // ゴーストごとの声の情報
-    pub ghosts_voices: HashMap<String, Vec<CharacterVoice>>,
+    pub ghosts_voices: Option<HashMap<String, Vec<CharacterVoice>>>,
 
     // 起動ごとにリセットされる変数
     #[serde(skip)]
@@ -28,15 +23,11 @@ pub struct GlobalVariables {
 
 impl GlobalVariables {
     pub fn new() -> Self {
-        let mut s = Self {
-            total_time: Some(0),
-            random_talk_interval: Some(180),
-            user_name: Some("ユーザ".to_string()),
-            ghosts_voices: HashMap::new(),
+        Self {
+            volume: Some(1.0),
+            ghosts_voices: Some(HashMap::new()),
             volatility: VolatilityVariables::default(),
-        };
-
-        s
+        }
     }
 
     pub fn load(&mut self) {
@@ -57,14 +48,11 @@ impl GlobalVariables {
         };
 
         // TODO: 変数追加時はここに追加することを忘れない
-        if let Some(t) = vars.total_time {
-            self.total_time = Some(t);
-        }
-        if let Some(t) = vars.random_talk_interval {
-            self.random_talk_interval = Some(t);
-        }
-        if let Some(t) = vars.user_name {
-            self.user_name = Some(t);
+        if let Some(v) = vars.volume {
+            self.volume = Some(v);
+        };
+        if let Some(g) = vars.ghosts_voices {
+            self.ghosts_voices = Some(g);
         }
     }
 
@@ -95,21 +83,6 @@ pub fn get_global_vars() -> &'static mut GlobalVariables {
     }
 }
 
-#[derive(PartialEq)]
-pub enum Direction {
-    Up,
-    Down,
-}
-
-impl Direction {
-    pub fn to_str(&self) -> &str {
-        match self {
-            Direction::Up => "up",
-            Direction::Down => "down",
-        }
-    }
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CharacterVoice {
     pub spekaer_uuid: String,
@@ -130,36 +103,6 @@ impl Default for CharacterVoice {
 pub struct VolatilityVariables {
     pub plugin_uuid: String,
 
-    // ゴーストが起動してからの秒数
-    pub ghost_up_time: u64,
-
-    // ゴーストの起動日時
-    pub ghost_boot_time: SystemTime,
-
-    pub nade_counter: i32,
-
-    pub last_nade_count_unixtime: SystemTime,
-
-    pub last_nade_part: String,
-
-    pub wheel_direction: Direction,
-
-    pub wheel_counter: i32,
-
-    pub last_wheel_count_unixtime: SystemTime,
-
-    pub last_wheel_part: String,
-
-    pub first_sexial_touch: bool,
-
-    pub touch_count: i32,
-
-    pub last_touch_info: String,
-
-    pub idle_seconds: i32,
-
-    pub idle_threshold: i32,
-
     pub speakers_info: Vec<SpeakerInfo>,
 }
 
@@ -167,20 +110,6 @@ impl Default for VolatilityVariables {
     fn default() -> Self {
         Self {
             plugin_uuid: "1e1e0813-f16f-409e-b870-2c36b9084732".to_string(),
-            ghost_up_time: 0,
-            ghost_boot_time: SystemTime::now(),
-            nade_counter: 0,
-            last_nade_count_unixtime: UNIX_EPOCH,
-            last_nade_part: "".to_string(),
-            wheel_direction: Direction::Up,
-            wheel_counter: 0,
-            last_wheel_count_unixtime: UNIX_EPOCH,
-            last_wheel_part: "".to_string(),
-            first_sexial_touch: false,
-            touch_count: 0,
-            last_touch_info: "".to_string(),
-            idle_seconds: 0,
-            idle_threshold: 60 * 5,
             speakers_info: get_speakers_info().unwrap(), // TODO: ちゃんとエラー処理
         }
     }
