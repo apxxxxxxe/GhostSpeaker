@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::speaker::{get_speakers_info, SpeakerInfo};
+
 const VAR_PATH: &str = "vars.json";
 static mut GLOBALVARS: Option<GlobalVariables> = None;
 
@@ -134,6 +136,8 @@ pub struct VolatilityVariables {
     pub idle_seconds: i32,
 
     pub idle_threshold: i32,
+
+    pub speakers_info: Vec<SpeakerInfo>,
 }
 
 impl Default for VolatilityVariables {
@@ -153,6 +157,7 @@ impl Default for VolatilityVariables {
             last_touch_info: "".to_string(),
             idle_seconds: 0,
             idle_threshold: 60 * 5,
+            speakers_info: get_speakers_info().unwrap(), // TODO: ちゃんとエラー処理
         }
     }
 }

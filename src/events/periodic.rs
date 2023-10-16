@@ -1,5 +1,5 @@
 use crate::events::common::*;
-use crate::queue::{PredictArgs, get_queue};
+use crate::queue::{get_queue, PredictArgs};
 use crate::response::PluginResponse;
 use crate::speaker::{get_speakers_info, SpeakerInfo};
 use crate::variables::get_global_vars;
@@ -30,12 +30,9 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
         Regex::new(r###"\\_{0,2}[a-zA-Z0-9*!&](\d|\[("([^"]|\\")+?"|([^\]]|\\\])+?)+?\])?"###)
             .unwrap();
 
-    let info: Vec<SpeakerInfo> = get_speakers_info().unwrap();
-    for i in info.iter() {
-        println!("{:?}", i.speaker_name);
-    }
     let dialog = sakura_script_re.replace_all(&msg, "").to_string();
     if !dialog.is_empty() {
+        let info = &get_global_vars().volatility.speakers_info;
         let speaker = info.get(0).unwrap();
         let speaker_uuid = String::from(&speaker.speaker_uuid);
         let style_id = speaker.styles.get(0).unwrap().style_id.unwrap();
@@ -44,7 +41,7 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
             speaker_uuid,
             style_id,
         };
-        get_queue().push(args); // TODO: 段落もしくは句点ごとに分割してpushする
+        get_queue().push_to_prediction(args); // TODO: 段落もしくは句点ごとに分割してpushする
     }
 
     new_response_nocontent()

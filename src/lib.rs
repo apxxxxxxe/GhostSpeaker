@@ -149,7 +149,7 @@ mod test {
                 speaker_uuid: String::from(&speaker_uuid),
                 style_id,
             };
-            get_queue().push(args);
+            get_queue().push_to_prediction(args);
         }
         for i in 0..20 {
             println!("{}", i);
