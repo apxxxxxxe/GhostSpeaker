@@ -18,10 +18,8 @@ use shiori_hglobal::*;
 use shiorust::message::Parser;
 
 use winapi::ctypes::c_long;
-use winapi::shared::minwindef::{BOOL, DWORD, HGLOBAL, HINSTANCE, LPVOID, MAX_PATH, TRUE};
-use winapi::um::winnt::{
-    DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH,
-};
+use winapi::shared::minwindef::{BOOL, HGLOBAL, TRUE};
+
 
 #[macro_use]
 extern crate log;

@@ -29,7 +29,7 @@ pub fn new_response_nocontent() -> PluginResponse {
     r
 }
 
-pub fn new_response_with_script(script: String, use_translate: bool) -> PluginResponse {
+pub fn new_response_with_script(script: String, _use_translate: bool) -> PluginResponse {
     let mut r = new_response();
     r.response
         .headers
@@ -37,7 +37,7 @@ pub fn new_response_with_script(script: String, use_translate: bool) -> PluginRe
     r
 }
 
-pub fn choose_one(values: &Vec<String>, update_weight: bool) -> Option<String> {
+pub fn choose_one(values: &Vec<String>, _update_weight: bool) -> Option<String> {
     if values.len() == 0 {
         return None;
     }
