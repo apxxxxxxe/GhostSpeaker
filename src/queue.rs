@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crate::coeiroink::predict::predict_text;
 use crate::player::play_wav;
-use crate::predict::predict_text;
 
 // なんだかこんがらがっている
 // playとpredictを分ける必要はないのでは？

@@ -67,8 +67,8 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     }
     volume_changer.push_str(&format!(
         " {:.2} \
-            \\q[>>,OnVolumeChange,{},{},{}]\\n\
-            ",
+        \\q[>>,OnVolumeChange,{},{},{}]\\n\
+        ",
         v, unit, refs[1], path_for_arg,
     ));
 

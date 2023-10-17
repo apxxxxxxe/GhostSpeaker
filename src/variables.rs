@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::speaker::{get_speakers_info, SpeakerInfo};
+use crate::coeiroink::speaker::{get_speakers_info, SpeakerInfo};
 
 const VAR_PATH: &str = "vars.json";
 static mut GLOBALVARS: Option<GlobalVariables> = None;
