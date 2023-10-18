@@ -138,10 +138,3 @@ impl Default for VolatilityVariables {
         }
     }
 }
-
-#[test]
-fn load() {
-    let vars = get_global_vars();
-    vars.load();
-    println!("{:?}", get_global_vars().volume);
-}

@@ -4,6 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::coeiroink::predict::predict_text;
+use crate::coeiroink::utils::{check_connection};
 use crate::player::play_wav;
 
 // なんだかこんがらがっている
@@ -41,19 +42,31 @@ impl Queue {
     pub fn init(&mut self) {
         let predict_queue = self.predict_queue.clone();
         let thread_stopper_a = self.thread_stopper.clone();
-        self.predict_join_handle = Some(thread::spawn(move || loop {
-            if *thread_stopper_a.lock().unwrap() {
-                break;
-            }
-            let args = {
-                let mut guard = predict_queue.lock().unwrap();
-                guard.pop_front()
-            };
-            if let Some(args) = args {
-                println!("{}", format!("predict_and_play: {}", args.text));
-                predict_and_queue(args);
-            } else {
-                thread::sleep(Duration::from_millis(100));
+        self.predict_join_handle = Some(thread::spawn(move || {
+            let mut i = 0;
+            loop {
+                if *thread_stopper_a.lock().unwrap() {
+                    break;
+                }
+                if !check_connection() || predict_queue.lock().unwrap().len() == 0 {
+                    thread::sleep(Duration::from_secs(1));
+                    continue;
+                } else {
+                    i += 1;
+                    if i % 10 == 0 {
+                        thread::sleep(Duration::from_secs(1));
+                    }
+                }
+                let args = {
+                    let mut guard = predict_queue.lock().unwrap();
+                    guard.pop_front()
+                };
+                if let Some(args) = args {
+                    println!("{}", format!("predict_and_play: {}", args.text));
+                    predict_and_queue(args);
+                } else {
+                    thread::sleep(Duration::from_millis(100));
+                }
             }
         }));
 

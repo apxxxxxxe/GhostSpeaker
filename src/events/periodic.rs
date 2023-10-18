@@ -1,5 +1,5 @@
-use crate::coeiroink::speaker::{get_speakers_info};
-use crate::coeiroink::utils::{check_engine_status, EngineStatus};
+use crate::coeiroink::speaker::get_speakers_info;
+use crate::coeiroink::utils::{check_connection};
 use crate::events::common::*;
 use crate::format::*;
 use crate::queue::{get_queue, PredictArgs};
@@ -12,7 +12,7 @@ pub fn on_second_change(_req: &Request) -> PluginResponse {
 }
 
 pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
-    if check_engine_status() != EngineStatus::Running {
+    if check_connection() == false {
         return new_response_nocontent();
     }
 
@@ -31,12 +31,19 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
         if dialog.text.is_empty() {
             continue;
         }
-        let info = &get_global_vars()
+        let info: &Vec<CharacterVoice>;
+        let mut v = Vec::new();
+        v.resize(10, CharacterVoice::default());
+        match &get_global_vars()
             .ghosts_voices
             .as_ref()
             .unwrap()
             .get(&ghost_name)
-            .unwrap();
+        {
+            Some(i) => info = i,
+            None => info = &v,
+        }
+
         let speaker = info.get(dialog.scope as usize).unwrap();
         let args = PredictArgs {
             text: dialog.text,

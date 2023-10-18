@@ -63,12 +63,3 @@ pub fn kill_process(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("Process not found: {:?}", path);
     Ok(())
 }
-
-#[test]
-fn test() {
-    const proc: &str = "D:\\tools_large\\COEIROINK_WIN_GPU_v.2.1.1\\engine\\engine.exe";
-    println!("{}", find_process(proc).is_some());
-    println!("{}", exec_process(proc).is_ok());
-    println!("{}", find_process(proc).is_some());
-    println!("{}", kill_process(proc).is_ok());
-}

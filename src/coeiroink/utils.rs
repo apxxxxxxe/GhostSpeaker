@@ -12,31 +12,25 @@ pub enum EngineStatus {
 
 const URL: &str = "http://127.0.0.1:50032";
 
-pub fn check_engine_status() -> EngineStatus {
-    match get_global_vars().engine_path.clone() {
-        Some(path) => {
-            let client = Client::new();
-            let res = client.get(URL).send();
-            match res {
-                Ok(_) => EngineStatus::Running,
-                Err(_) => {
-                    if let Some(_) = find_process(&path) {
-                        EngineStatus::Initializing
-                    } else {
-                        EngineStatus::Stopped
-                    }
-                }
-            }
-        }
-        None => EngineStatus::Unknown,
+pub fn check_engine_status() -> (bool, bool, bool) {
+    let (mut is_connected, mut is_running, mut is_traced) = (false, false, false);
+
+    let res = Client::new().get(URL).send();
+    if let Ok(_) = res {
+        is_connected = true;
+        is_running = true;
     }
+
+    if let Some(path) = get_global_vars().engine_path.clone() {
+        is_traced = true;
+        if let Some(_) = find_process(&path) {
+            is_running = true;
+        }
+    }
+
+    (is_connected, is_running, is_traced)
 }
 
 pub fn check_connection() -> bool {
-    let client = Client::new();
-    let res = client.get(URL).send();
-    match res {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    Client::new().get(URL).send().is_ok()
 }

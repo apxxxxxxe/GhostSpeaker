@@ -8,8 +8,8 @@ mod request;
 mod response;
 mod variables;
 
-use crate::coeiroink::utils::{check_engine_status, EngineStatus};
-use crate::process::{exec_process, kill_process};
+
+use crate::process::{kill_process};
 use crate::queue::get_queue;
 use crate::request::PluginRequest;
 use crate::variables::get_global_vars;
@@ -57,25 +57,6 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 
     debug!("load");
 
-    match check_engine_status() {
-        EngineStatus::Initializing => {
-            debug!("Engine is initializing");
-        }
-        EngineStatus::Running => {
-            debug!("Engine is running");
-        }
-        EngineStatus::Stopped => {
-            debug!("Engine is stopped");
-            let path = get_global_vars().engine_path.clone().unwrap();
-            if let Err(e) = exec_process(&path) {
-                error!("Failed to start engine process. {}", e);
-            }
-        }
-        EngineStatus::Unknown => {
-            debug!("Engine status is unknown: engine path is not set");
-        }
-    }
-
     return TRUE;
 }
 
@@ -118,27 +99,49 @@ pub extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
 
 #[cfg(test)]
 mod test {
-    use crate::coeiroink::speaker::{get_speakers_info, SpeakerInfo};
-    use crate::queue::{get_queue, PredictArgs};
+    
+    use crate::coeiroink::utils::{check_connection};
+    use crate::events::handle_request;
+    
+    use crate::queue::{get_queue};
+    use crate::request::PluginRequest;
+    use crate::variables::get_global_vars;
+    use shiorust::message::Parser;
+    
     use std::time::Duration;
 
     #[test]
     fn test_main() {
-        let info: Vec<SpeakerInfo> = get_speakers_info().unwrap();
-        for i in info.iter() {
-            println!("{:?}", i.speaker_name);
+        get_global_vars().load();
+
+        // init
+        get_queue();
+
+        while !check_connection() {
+            println!("waiting...");
+            std::thread::sleep(Duration::from_secs(1));
         }
-        let speaker = info.get(0).unwrap();
-        let speaker_uuid = String::from(&speaker.speaker_uuid);
-        let style_id = speaker.styles.get(0).unwrap().style_id.unwrap();
-        for i in 1..4 {
-            let args = PredictArgs {
-                text: format!("こんにちは{}", i),
-                speaker_uuid: String::from(&speaker_uuid),
-                style_id,
-            };
-            get_queue().push_to_prediction(args);
-        }
+
+        let pr = PluginRequest::parse(
+            "\
+            GET PLUGIN/2.0\r\n\
+            ID: OnOtherGhostTalk\r\n\
+            Charset: UTF-8\r\n\
+            Reference0: Test\r\n\
+            Reference1: dummy\r\n\
+            Reference2: dummy\r\n\
+            Reference3: dummy\r\n\
+            Reference4: こんにちは。\r\n\
+            \r\n\
+            ",
+        )
+        .unwrap();
+        let r = pr.request;
+        println!("{:?}", r);
+
+        let res = handle_request(&r);
+        println!("{:?}", res);
+
         for i in 0..20 {
             println!("{}", i);
             std::thread::sleep(Duration::from_secs(1));

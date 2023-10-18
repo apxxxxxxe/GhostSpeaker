@@ -169,19 +169,3 @@ pub fn count_characters(ghost_description: HashMap<String, String>) -> Vec<Strin
     }
     characters
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_combo() {
-        let values = vec![
-            vec!["a".to_string(), "b".to_string()],
-            vec!["c".to_string(), "d".to_string()],
-            vec!["e".to_string(), "f".to_string()],
-        ];
-        let result = all_combo(&values);
-        println!("{:?}", result);
-    }
-}

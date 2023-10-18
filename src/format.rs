@@ -153,15 +153,3 @@ fn delete_quick_section(src: String) -> String {
     }
     result
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_quicksection() {
-        let src = "\\0aaa\\![quicksection,1]bbb\\![quicksection,false]\\1ccc\\_qddd".to_string();
-        let result = delete_quick_section(src.to_string());
-        println!("src: {}\nresult: {}", src, result);
-    }
-}

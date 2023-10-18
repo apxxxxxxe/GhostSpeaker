@@ -33,16 +33,20 @@ pub struct Style {
     pub base64_portrait: Option<String>,
 }
 
-pub fn get_speakers_info() -> Result<Vec<SpeakerInfo>, serde_json::Error> {
+pub fn get_speakers_info() -> Result<Vec<SpeakerInfo>, reqwest::Error> {
     const URL: &str = "http://localhost:50032/v1/speakers";
 
-    let body = reqwest::blocking::Client::new()
+    println!("Requesting speakers info from {}", URL);
+
+    let body;
+    match reqwest::blocking::Client::new()
         .get(URL)
         .header("Content-Type", "application/json")
         .send()
-        .unwrap()
-        .text()
-        .unwrap();
+    {
+        Ok(res) => body = res.text().unwrap(),
+        Err(e) => return Err(e),
+    }
 
-    serde_json::from_str(&body)
+    Ok(serde_json::from_str(&body).unwrap())
 }
