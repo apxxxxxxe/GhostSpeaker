@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::coeiroink::speaker::{get_speakers_info, SpeakerInfo};
+use crate::coeiroink::speaker::{SpeakerInfo};
 
 const VAR_PATH: &str = "vars.json";
 static mut GLOBALVARS: Option<GlobalVariables> = None;
@@ -9,6 +9,9 @@ static mut GLOBALVARS: Option<GlobalVariables> = None;
 #[derive(Serialize, Deserialize)]
 pub struct GlobalVariables {
     // 変数を追加した場合はloadの中身も変更することを忘れないように
+
+    // エンジンのパス
+    pub engine_path: Option<String>,
 
     // 読み上げ音量
     pub volume: Option<f32>,
@@ -24,6 +27,7 @@ pub struct GlobalVariables {
 impl GlobalVariables {
     pub fn new() -> Self {
         Self {
+            engine_path: None,
             volume: Some(1.0),
             ghosts_voices: Some(HashMap::new()),
             volatility: VolatilityVariables::default(),
@@ -51,6 +55,9 @@ impl GlobalVariables {
         };
 
         // TODO: 変数追加時はここに追加することを忘れない
+        if let Some(p) = vars.engine_path {
+            self.engine_path = Some(p);
+        };
         if let Some(v) = vars.volume {
             self.volume = Some(v);
         };
@@ -64,7 +71,7 @@ impl GlobalVariables {
     }
 
     pub fn save(&self) {
-        let json_str = match serde_json::to_string(self) {
+        let json_str = match serde_json::to_string_pretty(self) {
             Ok(s) => s,
             Err(e) => {
                 error!("Failed to serialize variables. {}", e);
@@ -115,7 +122,10 @@ pub struct VolatilityVariables {
     // プラグインのディレクトリ
     pub dll_dir: String,
 
-    pub speakers_info: Vec<SpeakerInfo>,
+    pub speakers_info: Option<Vec<SpeakerInfo>>,
+
+    // 起動時にエンジンを起動したかどうか(終了時にエンジンを終了するかどうかの判定に使う)l
+    pub is_booted_with_engine: bool,
 }
 
 impl Default for VolatilityVariables {
@@ -123,7 +133,8 @@ impl Default for VolatilityVariables {
         Self {
             plugin_uuid: "1e1e0813-f16f-409e-b870-2c36b9084732".to_string(),
             dll_dir: "".to_string(),
-            speakers_info: get_speakers_info().unwrap(), // TODO: ちゃんとエラー処理
+            speakers_info: None,
+            is_booted_with_engine: false,
         }
     }
 }

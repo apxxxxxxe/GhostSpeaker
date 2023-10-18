@@ -1,3 +1,5 @@
+use crate::coeiroink::speaker::get_speakers_info;
+use crate::coeiroink::utils::{check_engine_status, EngineStatus};
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::response::PluginResponse;
@@ -8,10 +10,19 @@ use shiorust::message::Request;
 const DEFAULT_VOICE: &str = "default";
 
 pub fn on_menu_exec(req: &Request) -> PluginResponse {
+    if check_engine_status() != EngineStatus::Running {
+        return new_response_nocontent();
+    }
+    if let None = get_global_vars().volatility.speakers_info {
+        get_global_vars().volatility.speakers_info = Some(get_speakers_info().unwrap());
+    }
+
     let refs = get_references(req);
     let ghost_name = refs.get(1).unwrap().to_string();
     let ghost_description = load_descript(refs.get(4).unwrap().to_string());
     let characters = count_characters(ghost_description);
+
+    let speakers = get_global_vars().volatility.speakers_info.as_ref().unwrap();
 
     let chara_info = |name: &String, index: usize| -> String {
         let mut info = format!("\\\\{} ", index);
@@ -21,12 +32,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
         let mut voice = String::from(DEFAULT_VOICE);
         if let Some(si) = get_global_vars().ghosts_voices.as_ref().unwrap().get(name) {
             if let Some(c) = si.get(index) {
-                if let Some(speaker) = get_global_vars()
-                    .volatility
-                    .speakers_info
-                    .iter()
-                    .find(|s| s.speaker_uuid == c.spekaer_uuid)
-                {
+                if let Some(speaker) = speakers.iter().find(|s| s.speaker_uuid == c.spekaer_uuid) {
                     if let Some(style) = speaker
                         .styles
                         .iter()
@@ -93,7 +99,13 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
     let character_index = refs.get(2).unwrap().parse::<usize>().unwrap();
 
     let mut m = format!("\\_q{}\\n{}\\n", ghost_name, character_name);
-    for speaker in get_global_vars().volatility.speakers_info.iter() {
+    for speaker in get_global_vars()
+        .volatility
+        .speakers_info
+        .as_ref()
+        .unwrap()
+        .iter()
+    {
         for style in speaker.styles.iter() {
             m.push_str(&format!(
                 "\\![*]\\q[{} | {},OnVoiceSelected,{},{},{},{}]\\n",

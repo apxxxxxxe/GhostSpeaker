@@ -2,11 +2,14 @@ mod coeiroink;
 mod events;
 mod format;
 mod player;
+mod process;
 mod queue;
 mod request;
 mod response;
 mod variables;
 
+use crate::coeiroink::utils::{check_engine_status, EngineStatus};
+use crate::process::{exec_process, kill_process};
 use crate::queue::get_queue;
 use crate::request::PluginRequest;
 use crate::variables::get_global_vars;
@@ -19,7 +22,6 @@ use shiorust::message::Parser;
 
 use winapi::ctypes::c_long;
 use winapi::shared::minwindef::{BOOL, HGLOBAL, TRUE};
-
 
 #[macro_use]
 extern crate log;
@@ -39,8 +41,6 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
     let v = GStr::capture(h, len as usize);
     let s = v.to_utf8_str().unwrap();
 
-    debug!("load");
-
     get_global_vars().volatility.dll_dir = s.to_string();
     get_global_vars().load();
 
@@ -55,6 +55,27 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
     )
     .unwrap();
 
+    debug!("load");
+
+    match check_engine_status() {
+        EngineStatus::Initializing => {
+            debug!("Engine is initializing");
+        }
+        EngineStatus::Running => {
+            debug!("Engine is running");
+        }
+        EngineStatus::Stopped => {
+            debug!("Engine is stopped");
+            let path = get_global_vars().engine_path.clone().unwrap();
+            if let Err(e) = exec_process(&path) {
+                error!("Failed to start engine process. {}", e);
+            }
+        }
+        EngineStatus::Unknown => {
+            debug!("Engine status is unknown: engine path is not set");
+        }
+    }
+
     return TRUE;
 }
 
@@ -64,6 +85,14 @@ pub extern "cdecl" fn unload() -> BOOL {
 
     get_global_vars().save();
     get_queue().stop();
+
+    if get_global_vars().volatility.is_booted_with_engine {
+        if let Some(path) = get_global_vars().engine_path.clone() {
+            if let Err(e) = kill_process(&path) {
+                error!("Failed to kill engine process. {}", e);
+            }
+        }
+    }
 
     return TRUE;
 }
