@@ -8,8 +8,7 @@ mod request;
 mod response;
 mod variables;
 
-
-use crate::process::{kill_process};
+use crate::process::kill_process;
 use crate::queue::get_queue;
 use crate::request::PluginRequest;
 use crate::variables::get_global_vars;
@@ -99,15 +98,12 @@ pub extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
 
 #[cfg(test)]
 mod test {
-    
-    use crate::coeiroink::utils::{check_connection};
+    use crate::coeiroink::utils::check_connection;
     use crate::events::handle_request;
-    
-    use crate::queue::{get_queue};
+    use crate::queue::get_queue;
     use crate::request::PluginRequest;
     use crate::variables::get_global_vars;
     use shiorust::message::Parser;
-    
     use std::time::Duration;
 
     #[test]

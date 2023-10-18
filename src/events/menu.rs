@@ -1,5 +1,5 @@
 use crate::coeiroink::speaker::get_speakers_info;
-use crate::coeiroink::utils::{check_connection};
+use crate::coeiroink::utils::check_connection;
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::response::PluginResponse;
@@ -16,6 +16,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let ghost_name = refs.get(1).unwrap().to_string();
     let ghost_description = load_descript(refs.get(4).unwrap().to_string());
     let characters = count_characters(ghost_description);
+    let path_for_arg = refs[4].to_string().replace("\\", "\\\\");
 
     if check_connection() == true {
         if let None = get_global_vars().volatility.speakers_info {
@@ -50,11 +51,12 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
                 }
             };
             info + &format!(
-                "\\q[{},OnVoiceSelecting,{},{},{}]\\n",
+                "\\q[{},OnVoiceSelecting,{},{},{},{}]\\n",
                 voice,
                 ghost_name,
                 characters.get(index).unwrap_or(&String::from("")),
-                index
+                index,
+                path_for_arg,
             )
         };
 
@@ -75,7 +77,6 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
         false => "停止中",
     };
 
-    let path_for_arg = refs[4].to_string().replace("\\", "\\\\");
     let unit: f32 = 0.05;
     let v = get_global_vars().volume.unwrap();
 
@@ -113,6 +114,7 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
     let ghost_name = refs.get(0).unwrap();
     let character_name = refs.get(1).unwrap();
     let character_index = refs.get(2).unwrap().parse::<usize>().unwrap();
+    let ghost_path = refs.get(3).unwrap();
 
     let mut m = format!("\\_q{}\\n{}\\n", ghost_name, character_name);
     for speaker in get_global_vars()
@@ -124,13 +126,14 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
     {
         for style in speaker.styles.iter() {
             m.push_str(&format!(
-                "\\![*]\\q[{} | {},OnVoiceSelected,{},{},{},{}]\\n",
+                "\\![*]\\q[{} | {},OnVoiceSelected,{},{},{},{},{}]\\n",
                 speaker.speaker_name,
                 style.style_name.as_ref().unwrap(),
                 ghost_name,
                 character_index,
                 speaker.speaker_uuid,
                 style.style_id.unwrap(),
+                ghost_path,
             ));
         }
     }
@@ -145,6 +148,7 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
     let character_index = refs.get(1).unwrap().parse::<usize>().unwrap();
     let speaker_uuid = refs.get(2).unwrap();
     let style_id = refs.get(3).unwrap();
+    let ghost_path = refs.get(4).unwrap();
 
     let voice = CharacterVoice {
         spekaer_uuid: speaker_uuid.to_string(),
@@ -160,10 +164,11 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
         if info.len() - 1 < character_index {
             info.resize(character_index + 1, CharacterVoice::default());
         }
+        info.remove(character_index);
         info.insert(character_index, voice)
     } else {
         let mut v = Vec::new();
-        v.resize(character_index + 1, CharacterVoice::default());
+        v.resize(character_index, CharacterVoice::default());
         v.insert(character_index, voice);
         get_global_vars()
             .ghosts_voices
@@ -171,7 +176,13 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
             .unwrap()
             .insert(ghost_name.to_string(), v);
     }
-    new_response_with_script("\\_q設定しました。".to_string(), true)
+    let script = format!(
+        "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+        get_global_vars().volatility.plugin_uuid,
+        ghost_name,
+        ghost_path.replace("\\", "\\\\")
+    );
+    new_response_with_script(script, false)
 }
 
 pub fn on_volume_change(req: &Request) -> PluginResponse {
