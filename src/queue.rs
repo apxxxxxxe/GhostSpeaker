@@ -3,14 +3,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::coeiroink::predict::predict_text;
-use crate::coeiroink::utils::{check_connection};
+use crate::coeiroink::predict::{get_speaker, predict_text};
+use crate::coeiroink::speaker::get_speakers_info;
+use crate::coeiroink::utils::check_connection;
 use crate::player::play_wav;
-
-// なんだかこんがらがっている
-// playとpredictを分ける必要はないのでは？
-// predict_and_playをasync fnとして実装すればいい
-// asyncである必要すらないかも
+use crate::variables::get_global_vars;
 
 pub static mut QUEUE: Option<Queue> = None;
 
@@ -24,8 +21,8 @@ pub struct Queue {
 
 pub struct PredictArgs {
     pub text: String,
-    pub speaker_uuid: String,
-    pub style_id: i32,
+    pub ghost_name: String,
+    pub scope: usize,
 }
 
 impl Queue {
@@ -62,8 +59,14 @@ impl Queue {
                     guard.pop_front()
                 };
                 if let Some(args) = args {
+                    if let None = get_global_vars().volatility.speakers_info {
+                        // 上で接続は確認しているのでunwrapでok
+                        get_global_vars().volatility.speakers_info =
+                            Some(get_speakers_info().unwrap());
+                    }
                     println!("{}", format!("predict_and_play: {}", args.text));
-                    predict_and_queue(args);
+                    let speaker = get_speaker(args.ghost_name, args.scope);
+                    predict_and_queue(args.text, speaker.spekaer_uuid, speaker.style_id);
                 } else {
                     thread::sleep(Duration::from_millis(100));
                 }
@@ -109,13 +112,8 @@ impl Queue {
     }
 }
 
-fn predict_and_queue(args: PredictArgs) {
-    let PredictArgs {
-        text,
-        speaker_uuid,
-        style_id,
-    } = args;
-    let result = predict_text(String::from(&text), String::from(&speaker_uuid), style_id);
+fn predict_and_queue(text: String, speaker_uuid: String, style_id: i32) {
+    let result = predict_text(text, speaker_uuid, style_id);
     if let Ok(result) = result {
         get_queue().push_to_play(result.data);
     } else {

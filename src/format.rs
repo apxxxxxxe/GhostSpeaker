@@ -2,7 +2,7 @@ use regex::Regex;
 
 pub struct Dialog {
     pub text: String,
-    pub scope: i32,
+    pub scope: usize,
 }
 
 pub fn split_dialog(src: String) -> Vec<Dialog> {
@@ -48,7 +48,7 @@ fn split_dialog_local(src: String) -> Vec<Dialog> {
     for (i, cap) in submatch_iter.enumerate() {
         let sakura_kero = cap.get(1).map(|m| m.as_str());
         let char = cap.get(2).map(|m| m.as_str());
-        let scope: i32;
+        let scope: usize;
         if let Some(sakura_kero) = sakura_kero {
             scope = match sakura_kero {
                 "0" => 0,
@@ -58,7 +58,7 @@ fn split_dialog_local(src: String) -> Vec<Dialog> {
                 _ => unreachable!(),
             };
         } else if let Some(char) = char {
-            scope = char.parse::<i32>().unwrap();
+            scope = char.parse().unwrap();
         } else {
             unreachable!();
         }

@@ -1,10 +1,9 @@
+use base64::{engine::general_purpose, Engine as _};
 use http::StatusCode;
-
 use serde::{Deserialize, Serialize};
 
-use base64::{engine::general_purpose, Engine as _};
-
 use crate::player::Wave;
+use crate::variables::{get_global_vars, CharacterVoice};
 
 #[derive(Debug, Deserialize)]
 struct PredictResponse {
@@ -86,6 +85,24 @@ pub struct ProsodyDetail {
 
     #[serde(rename = "accent")]
     pub accent: i32,
+}
+
+pub fn get_speaker(ghost_name: String, scope: usize) -> CharacterVoice {
+    let info: &Vec<CharacterVoice>;
+    let mut v = Vec::new();
+    v.resize(10, CharacterVoice::default());
+    match &get_global_vars()
+        .ghosts_voices
+        .as_ref()
+        .unwrap()
+        .get(&ghost_name)
+    {
+        Some(i) => info = i,
+        None => info = &v,
+    }
+
+    let speaker = info.get(scope).unwrap();
+    speaker.clone()
 }
 
 pub fn predict_text(

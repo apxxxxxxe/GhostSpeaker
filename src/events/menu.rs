@@ -1,5 +1,3 @@
-use crate::coeiroink::speaker::get_speakers_info;
-use crate::coeiroink::utils::check_connection;
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::response::PluginResponse;
@@ -18,13 +16,8 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let characters = count_characters(ghost_description);
     let path_for_arg = refs[4].to_string().replace("\\", "\\\\");
 
-    if check_connection() == true {
-        if let None = get_global_vars().volatility.speakers_info {
-            get_global_vars().volatility.speakers_info = Some(get_speakers_info().unwrap());
-        }
-
-        let speakers = get_global_vars().volatility.speakers_info.as_ref().unwrap();
-
+    if get_global_vars().volatility.speakers_info.is_some() {
+        let speakers_info = get_global_vars().volatility.speakers_info.as_ref().unwrap();
         let chara_info = |name: &String, index: usize| -> String {
             let mut info = format!("\\\\{} ", index);
             if let Some(c) = characters.get(index) {
@@ -33,8 +26,9 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
             let mut voice = String::from(DEFAULT_VOICE);
             if let Some(si) = get_global_vars().ghosts_voices.as_ref().unwrap().get(name) {
                 if let Some(c) = si.get(index) {
-                    if let Some(speaker) =
-                        speakers.iter().find(|s| s.speaker_uuid == c.spekaer_uuid)
+                    if let Some(speaker) = speakers_info
+                        .iter()
+                        .find(|s| s.speaker_uuid == c.spekaer_uuid)
                     {
                         if let Some(style) = speaker
                             .styles
@@ -72,11 +66,6 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
         }
     }
 
-    let engine_status = match check_connection() {
-        true => "動作中",
-        false => "停止中",
-    };
-
     let unit: f32 = 0.05;
     let v = get_global_vars().volume.unwrap();
 
@@ -97,13 +86,12 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let m = format!(
         "\
     \\_q\
-    COEIROINKの状態: {}\\n\
     {}\\n\
     {}\\n\
     \\![*]音量調整(共通) {}\
     \\n\\q[×,]\
     ",
-        engine_status, ghost_name, characters_info, volume_changer
+        ghost_name, characters_info, volume_changer
     );
 
     new_response_with_script(m.to_string(), true)

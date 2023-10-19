@@ -1,5 +1,5 @@
 use crate::coeiroink::speaker::get_speakers_info;
-use crate::coeiroink::utils::{check_connection};
+use crate::coeiroink::utils::check_connection;
 use crate::events::common::*;
 use crate::format::*;
 use crate::queue::{get_queue, PredictArgs};
@@ -8,16 +8,20 @@ use crate::variables::{get_global_vars, CharacterVoice};
 use shiorust::message::Request;
 
 pub fn on_second_change(_req: &Request) -> PluginResponse {
+    let vars = get_global_vars();
+    if vars.volatility.speakers_info.is_none() {
+        if check_connection() {
+            if let Ok(speakers_info) = get_speakers_info() {
+                vars.volatility.speakers_info = Some(speakers_info);
+            }
+        }
+    }
     new_response_nocontent()
 }
 
 pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
     if check_connection() == false {
         return new_response_nocontent();
-    }
-
-    if let None = get_global_vars().volatility.speakers_info {
-        get_global_vars().volatility.speakers_info = Some(get_speakers_info().unwrap());
     }
 
     let refs = get_references(req);
@@ -31,26 +35,11 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
         if dialog.text.is_empty() {
             continue;
         }
-        let info: &Vec<CharacterVoice>;
-        let mut v = Vec::new();
-        v.resize(10, CharacterVoice::default());
-        match &get_global_vars()
-            .ghosts_voices
-            .as_ref()
-            .unwrap()
-            .get(&ghost_name)
-        {
-            Some(i) => info = i,
-            None => info = &v,
-        }
-
-        let speaker = info.get(dialog.scope as usize).unwrap();
-        let args = PredictArgs {
+        get_queue().push_to_prediction(PredictArgs {
             text: dialog.text,
-            speaker_uuid: speaker.spekaer_uuid.clone(),
-            style_id: speaker.style_id,
-        };
-        get_queue().push_to_prediction(args);
+            ghost_name: ghost_name.clone(),
+            scope: dialog.scope,
+        });
     }
 
     new_response_nocontent()
