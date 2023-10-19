@@ -8,6 +8,7 @@ mod request;
 mod response;
 mod variables;
 
+use crate::coeiroink::speaker::start_speaker_info_getter;
 use crate::process::kill_process;
 use crate::queue::get_queue;
 use crate::request::PluginRequest;
@@ -50,6 +51,8 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
         File::create(log_path).unwrap(),
     )
     .unwrap();
+
+    start_speaker_info_getter();
 
     debug!("load");
 

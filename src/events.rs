@@ -51,7 +51,6 @@ pub fn version(_req: &Request) -> PluginResponse {
 fn get_event(id: &str) -> Option<fn(&Request) -> PluginResponse> {
     match id {
         "version" => Some(version),
-        "OnSecondChange" => Some(on_second_change),
         "OnOtherGhostTalk" => Some(on_other_ghost_talk),
         "OnMenuExec" => Some(on_menu_exec),
         "OnVoiceSelecting" => Some(on_voice_selecting),

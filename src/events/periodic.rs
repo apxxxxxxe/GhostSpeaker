@@ -1,4 +1,3 @@
-use crate::coeiroink::speaker::get_speakers_info;
 use crate::coeiroink::utils::check_connection;
 use crate::events::common::*;
 use crate::format::*;
@@ -6,18 +5,6 @@ use crate::queue::{get_queue, PredictArgs};
 use crate::response::PluginResponse;
 use crate::variables::{get_global_vars, CharacterVoice};
 use shiorust::message::Request;
-
-pub fn on_second_change(_req: &Request) -> PluginResponse {
-    let vars = get_global_vars();
-    if vars.volatility.speakers_info.is_none() {
-        if check_connection() {
-            if let Ok(speakers_info) = get_speakers_info() {
-                vars.volatility.speakers_info = Some(speakers_info);
-            }
-        }
-    }
-    new_response_nocontent()
-}
 
 pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
     if check_connection() == false {
