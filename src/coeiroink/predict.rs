@@ -3,7 +3,7 @@ use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::player::Wave;
-use crate::variables::{get_global_vars, CharacterVoice};
+use crate::variables::{get_global_vars, CharacterVoice, GhostVoiceInfo};
 
 #[derive(Debug, Deserialize)]
 struct PredictResponse {
@@ -88,9 +88,8 @@ pub struct ProsodyDetail {
 }
 
 pub fn get_speaker(ghost_name: String, scope: usize) -> CharacterVoice {
-    let info: &Vec<CharacterVoice>;
-    let mut v = Vec::new();
-    v.resize(10, CharacterVoice::default());
+    let info: &GhostVoiceInfo;
+    let g = GhostVoiceInfo::default();
     match &get_global_vars()
         .ghosts_voices
         .as_ref()
@@ -98,10 +97,10 @@ pub fn get_speaker(ghost_name: String, scope: usize) -> CharacterVoice {
         .get(&ghost_name)
     {
         Some(i) => info = i,
-        None => info = &v,
+        None => info = &g,
     }
 
-    let speaker = info.get(scope).unwrap();
+    let speaker = info.voices.get(scope).unwrap();
     speaker.clone()
 }
 

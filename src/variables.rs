@@ -17,7 +17,7 @@ pub struct GlobalVariables {
     pub volume: Option<f32>,
 
     // ゴーストごとの声の情報
-    pub ghosts_voices: Option<HashMap<String, Vec<CharacterVoice>>>,
+    pub ghosts_voices: Option<HashMap<String, GhostVoiceInfo>>,
 
     // 起動ごとにリセットされる変数
     #[serde(skip)]
@@ -96,6 +96,34 @@ pub fn get_global_vars() -> &'static mut GlobalVariables {
             GLOBALVARS = Some(GlobalVariables::new());
         }
         GLOBALVARS.as_mut().unwrap()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GhostVoiceInfo {
+    pub devide_by_lines: bool,
+    pub voices: Vec<CharacterVoice>,
+}
+
+impl Default for GhostVoiceInfo {
+    fn default() -> Self {
+        let mut v = Vec::new();
+        v.resize(10, CharacterVoice::default());
+        GhostVoiceInfo {
+            devide_by_lines: false,
+            voices: v,
+        }
+    }
+}
+
+impl GhostVoiceInfo {
+    pub fn new(character_count: usize) -> Self {
+        let mut v = Vec::new();
+        v.resize(character_count, CharacterVoice::default());
+        GhostVoiceInfo {
+            devide_by_lines: false,
+            voices: v,
+        }
     }
 }
 

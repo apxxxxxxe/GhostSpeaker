@@ -1,7 +1,7 @@
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::response::PluginResponse;
-use crate::variables::{get_global_vars, CharacterVoice};
+use crate::variables::{get_global_vars, CharacterVoice, GhostVoiceInfo};
 
 use shiorust::message::Request;
 
@@ -9,6 +9,7 @@ const DEFAULT_VOICE: &str = "default";
 
 pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let mut characters_info = String::new();
+    let mut division_setting = String::new();
 
     let refs = get_references(req);
     let ghost_name = refs.get(1).unwrap().to_string();
@@ -18,14 +19,24 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
 
     if get_global_vars().volatility.speakers_info.is_some() {
         let speakers_info = get_global_vars().volatility.speakers_info.as_ref().unwrap();
-        let chara_info = |name: &String, index: usize| -> String {
+        let mut chara_info = |name: &String, index: usize| -> String {
             let mut info = format!("\\\\{} ", index);
             if let Some(c) = characters.get(index) {
                 info.push_str(&format!("{}:\\n    ", c));
             }
             let mut voice = String::from(DEFAULT_VOICE);
             if let Some(si) = get_global_vars().ghosts_voices.as_ref().unwrap().get(name) {
-                if let Some(c) = si.get(index) {
+                let switch: String;
+                if si.devide_by_lines {
+                    switch = "有効".to_string();
+                } else {
+                    switch = "無効".to_string();
+                }
+                division_setting = format!(
+                    "【現在 \\q[{},OnDivisionSettingChanged,{},{}]】\\n",
+                    switch, ghost_name, path_for_arg
+                );
+                if let Some(c) = si.voices.get(index) {
                     if let Some(speaker) = speakers_info
                         .iter()
                         .find(|s| s.speaker_uuid == c.spekaer_uuid)
@@ -89,9 +100,10 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     {}\\n\
     {}\\n\
     \\![*]音量調整(共通) {}\
+    \\![*]改行で一拍おく(ゴースト別) {}\
     \\n\\q[×,]\
     ",
-        ghost_name, characters_info, volume_changer
+        ghost_name, characters_info, volume_changer, division_setting,
     );
 
     new_response_with_script(m.to_string(), true)
@@ -149,20 +161,21 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
         .unwrap()
         .get_mut(*ghost_name)
     {
-        if info.len() - 1 < character_index {
-            info.resize(character_index + 1, CharacterVoice::default());
+        let voices = &mut info.voices;
+        if voices.len() - 1 < character_index {
+            voices.resize(character_index + 1, CharacterVoice::default());
         }
-        info.remove(character_index);
-        info.insert(character_index, voice)
+        voices.remove(character_index);
+        voices.insert(character_index, voice)
     } else {
-        let mut v = Vec::new();
-        v.resize(character_index, CharacterVoice::default());
-        v.insert(character_index, voice);
+        let mut g = GhostVoiceInfo::default();
+        g.voices.resize(character_index, CharacterVoice::default());
+        g.voices.insert(character_index, voice);
         get_global_vars()
             .ghosts_voices
             .as_mut()
             .unwrap()
-            .insert(ghost_name.to_string(), v);
+            .insert(ghost_name.to_string(), g);
     }
     let script = format!(
         "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
@@ -182,6 +195,28 @@ pub fn on_volume_change(req: &Request) -> PluginResponse {
     let script = format!(
         "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
         vars.volatility.plugin_uuid, refs[1], refs[2]
+    );
+    new_response_with_script(script, false)
+}
+
+pub fn on_division_setting_changed(req: &Request) -> PluginResponse {
+    let refs = get_references(req);
+    let ghost_name = refs[0].to_string();
+    let path_for_arg = refs[1].to_string();
+    if let Some(info) = get_global_vars()
+        .ghosts_voices
+        .as_mut()
+        .unwrap()
+        .get_mut(&ghost_name)
+    {
+        info.devide_by_lines = !info.devide_by_lines
+    }
+
+    let script = format!(
+        "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+        get_global_vars().volatility.plugin_uuid,
+        ghost_name,
+        path_for_arg
     );
     new_response_with_script(script, false)
 }

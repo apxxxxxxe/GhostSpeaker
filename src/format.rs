@@ -5,9 +5,15 @@ pub struct Dialog {
     pub scope: usize,
 }
 
-pub fn split_dialog(src: String) -> Vec<Dialog> {
+pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
     let mut s = src.clone();
     s = delete_quick_section(s);
+
+    let lines_re = Regex::new(r"\\n").unwrap();
+    if devide_by_lines {
+        s = lines_re.replace_all(&s, "$0。").to_string();
+    }
+
     let mut raws = split_dialog_local(s);
     for r in raws.iter_mut() {
         r.text = clear_tags(r.text.clone());

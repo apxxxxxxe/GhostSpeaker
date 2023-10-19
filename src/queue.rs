@@ -5,6 +5,7 @@ use std::thread;
 use crate::coeiroink::predict::{get_speaker, predict_text};
 use crate::coeiroink::speaker::get_speakers_info;
 use crate::coeiroink::utils::check_connection;
+use crate::format::split_dialog;
 use crate::player::play_wav;
 use crate::variables::get_global_vars;
 
@@ -23,7 +24,6 @@ pub struct Queue {
 pub struct PredictArgs {
     pub text: String,
     pub ghost_name: String,
-    pub scope: usize,
 }
 
 impl Queue {
@@ -54,7 +54,7 @@ impl Queue {
                     update = cvar.wait_while(update, |u| !*u).unwrap();
                 }
 
-                println!("predict thread started by condvar");
+                debug!("predict thread started by condvar");
 
                 if *thread_stopper_cln_a.lock().unwrap() {
                     return;
@@ -65,13 +65,25 @@ impl Queue {
                         if let Ok(speakers_info) = get_speakers_info() {
                             get_global_vars().volatility.speakers_info = Some(speakers_info);
                         } else {
-                            println!("{}", "Failed to get speakers info when predicting");
+                            debug!("{}", "Failed to get speakers info when predicting");
                             continue;
                         }
                     }
-                    println!("{}", format!("predicting: {}", args.text));
-                    let speaker = get_speaker(args.ghost_name, args.scope);
-                    predict_and_queue(args.text, speaker.spekaer_uuid, speaker.style_id);
+                    debug!("{}", format!("predicting: {}", args.text));
+                    let devide_by_lines = get_global_vars()
+                        .ghosts_voices
+                        .as_ref()
+                        .unwrap()
+                        .get(&args.ghost_name)
+                        .unwrap()
+                        .devide_by_lines;
+                    for dialog in split_dialog(args.text, devide_by_lines) {
+                        if dialog.text.is_empty() {
+                            continue;
+                        }
+                        let speaker = get_speaker(args.ghost_name.clone(), dialog.scope);
+                        predict_and_queue(dialog.text, speaker.spekaer_uuid, speaker.style_id);
+                    }
                 }
 
                 *update = false;
@@ -90,14 +102,14 @@ impl Queue {
                     update = cvar.wait_while(update, |u| !*u).unwrap();
                 }
 
-                println!("{}", "play thread start");
+                debug!("{}", "play thread start");
 
                 if *thread_stopper_cln_b.lock().unwrap() {
                     return;
                 }
 
                 if let Some(data) = play_queue_cln.lock().unwrap().pop_front() {
-                    println!("{}", format!("play: {}", data.len()));
+                    debug!("{}", format!("play: {}", data.len()));
                     play_wav(data, &thread_stopper_cln_c);
                     if *thread_stopper_cln_c.lock().unwrap() {
                         return;
@@ -149,7 +161,7 @@ fn predict_and_queue(text: String, speaker_uuid: String, style_id: i32) {
     if let Ok(result) = result {
         get_queue().push_to_play(result.data);
     } else {
-        println!("predict failed: {}", result.err().unwrap());
+        debug!("predict failed: {}", result.err().unwrap());
     }
 }
 
