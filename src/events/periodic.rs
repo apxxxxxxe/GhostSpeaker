@@ -1,4 +1,3 @@
-use crate::coeiroink::utils::check_connection;
 use crate::events::common::*;
 use crate::format::*;
 use crate::queue::{get_queue, PredictArgs};
@@ -7,10 +6,6 @@ use crate::variables::{get_global_vars, CharacterVoice};
 use shiorust::message::Request;
 
 pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
-    if check_connection() == false {
-        return new_response_nocontent();
-    }
-
     let refs = get_references(req);
     let ghost_name = refs[0].to_string();
     let msg = refs[4].to_string();

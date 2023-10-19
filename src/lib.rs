@@ -127,7 +127,27 @@ mod test {
             Reference1: dummy\r\n\
             Reference2: dummy\r\n\
             Reference3: dummy\r\n\
-            Reference4: こんにちは。\r\n\
+            Reference4: \\0こんにちは\\1ゴーストはこちらを見て微笑んだ。\\0あれ、なにか顔についてる？\\n違う？ならいいけど。\r\n\
+            \r\n\
+            ",
+        )
+        .unwrap();
+        let r = pr.request;
+        println!("{:?}", r);
+
+        let res = handle_request(&r);
+        println!("{:?}", res);
+
+        let pr = PluginRequest::parse(
+            "\
+            GET PLUGIN/2.0\r\n\
+            ID: OnOtherGhostTalk\r\n\
+            Charset: UTF-8\r\n\
+            Reference0: Test\r\n\
+            Reference1: dummy\r\n\
+            Reference2: dummy\r\n\
+            Reference3: dummy\r\n\
+            Reference4: \\0第2トーク。\\1ゴーストは本に目を通している。\r\n\
             \r\n\
             ",
         )

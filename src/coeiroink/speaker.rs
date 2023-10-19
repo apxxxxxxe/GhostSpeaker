@@ -11,6 +11,7 @@ pub fn start_speaker_info_getter() {
             let vars = get_global_vars();
             if let Ok(speakers_info) = get_speakers_info() {
                 vars.volatility.speakers_info = Some(speakers_info);
+                break;
             }
             thread::sleep(std::time::Duration::from_secs(1));
         }));
