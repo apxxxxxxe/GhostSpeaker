@@ -3,8 +3,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use crate::coeiroink::predict::{get_speaker, predict_text};
-use crate::coeiroink::speaker::get_speakers_info;
-use crate::coeiroink::utils::check_connection;
+
 use crate::format::split_dialog;
 use crate::player::play_wav;
 use crate::variables::get_global_vars;
@@ -47,27 +46,21 @@ impl Queue {
             let (lock, cvar) = &*predict_state_cln;
             let mut update = lock.lock().unwrap();
             loop {
-                if predict_queue_cln.lock().unwrap().is_empty()
-                    || get_global_vars().volatility.speakers_info.is_none()
-                    || !check_connection()
-                {
+                if predict_queue_cln.lock().unwrap().is_empty() {
+                    debug!("{}", "predict queue pause");
                     update = cvar.wait_while(update, |u| !*u).unwrap();
                 }
 
-                debug!("predict thread started by condvar");
-
                 if *thread_stopper_cln_a.lock().unwrap() {
+                    debug!("{}", "predict thread stop");
                     return;
+                } else {
+                    debug!("{}", "predict thread resume");
                 }
 
                 if let Some(args) = predict_queue_cln.lock().unwrap().pop_front() {
                     if let None = get_global_vars().volatility.speakers_info {
-                        if let Ok(speakers_info) = get_speakers_info() {
-                            get_global_vars().volatility.speakers_info = Some(speakers_info);
-                        } else {
-                            debug!("{}", "Failed to get speakers info when predicting");
-                            continue;
-                        }
+                        continue;
                     }
                     debug!("{}", format!("predicting: {}", args.text));
                     let devide_by_lines = get_global_vars()
@@ -99,13 +92,15 @@ impl Queue {
             let mut update = lock.lock().unwrap();
             loop {
                 if play_queue_cln.lock().unwrap().is_empty() {
+                    debug!("{}", "play queue pause");
                     update = cvar.wait_while(update, |u| !*u).unwrap();
                 }
 
-                debug!("{}", "play thread start");
-
                 if *thread_stopper_cln_b.lock().unwrap() {
+                    debug!("{}", "play thread stop");
                     return;
+                } else {
+                    debug!("{}", "play thread start");
                 }
 
                 if let Some(data) = play_queue_cln.lock().unwrap().pop_front() {
@@ -142,10 +137,14 @@ impl Queue {
     }
 
     pub fn push_to_prediction(&self, args: PredictArgs) {
+        debug!("pushing to prediction");
         self.predict_queue.lock().unwrap().push_back(args);
-        let (lock, cvar) = &*self.predict_state;
+        debug!("added to prediction queue");
+        let (lock, cvar) = &*self.predict_state.clone();
         *lock.lock().unwrap() = true;
+        debug!("notifying prediction");
         cvar.notify_one();
+        debug!("pushed to prediction");
     }
 
     fn push_to_play(&self, data: Vec<u8>) {

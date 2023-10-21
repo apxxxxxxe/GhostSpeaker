@@ -151,9 +151,6 @@ pub struct VolatilityVariables {
     pub dll_dir: String,
 
     pub speakers_info: Option<Vec<SpeakerInfo>>,
-
-    // 起動時にエンジンを起動したかどうか(終了時にエンジンを終了するかどうかの判定に使う)l
-    pub is_booted_with_engine: bool,
 }
 
 impl Default for VolatilityVariables {
@@ -162,7 +159,6 @@ impl Default for VolatilityVariables {
             plugin_uuid: "1e1e0813-f16f-409e-b870-2c36b9084732".to_string(),
             dll_dir: "".to_string(),
             speakers_info: None,
-            is_booted_with_engine: false,
         }
     }
 }

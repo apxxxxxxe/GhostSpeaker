@@ -2,32 +2,28 @@ mod coeiroink;
 mod events;
 mod format;
 mod player;
-mod process;
 mod queue;
 mod request;
 mod response;
 mod variables;
 
-use crate::coeiroink::speaker::start_speaker_info_getter;
-use crate::process::kill_process;
+use crate::coeiroink::speaker::get_speaker_getter;
 use crate::queue::get_queue;
 use crate::request::PluginRequest;
 use crate::variables::get_global_vars;
 
-use std::fs::File;
-use std::path::Path;
-
 use shiori_hglobal::*;
 use shiorust::message::Parser;
-
+use simplelog::*;
+use std::fs::File;
+use std::panic;
+use std::path::Path;
 use winapi::ctypes::c_long;
 use winapi::shared::minwindef::{BOOL, HGLOBAL, TRUE};
 
 #[macro_use]
 extern crate log;
 extern crate simplelog;
-
-use simplelog::*;
 
 pub static mut DLL_PATH: String = String::new();
 
@@ -52,7 +48,11 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
     )
     .unwrap();
 
-    start_speaker_info_getter();
+    panic::set_hook(Box::new(|panic_info| {
+        debug!("{}", panic_info);
+    }));
+
+    get_speaker_getter().start();
 
     debug!("load");
 
@@ -61,18 +61,11 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
-    debug!("unload");
-
     get_global_vars().save();
     get_queue().stop();
+    get_speaker_getter().stop();
 
-    if get_global_vars().volatility.is_booted_with_engine {
-        if let Some(path) = get_global_vars().engine_path.clone() {
-            if let Err(e) = kill_process(&path) {
-                error!("Failed to kill engine process. {}", e);
-            }
-        }
-    }
+    debug!("unload");
 
     return TRUE;
 }

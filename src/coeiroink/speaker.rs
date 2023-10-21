@@ -1,21 +1,54 @@
+use once_cell::sync::Lazy;
 use serde::Deserialize;
 
-use crate::variables::get_global_vars;
 use std::thread;
 
-static mut SPEAKER_INFO_GETTER: Option<thread::JoinHandle<()>> = None;
+use crate::variables::get_global_vars;
 
-pub fn start_speaker_info_getter() {
-    unsafe {
-        SPEAKER_INFO_GETTER = Some(thread::spawn(|| loop {
-            let vars = get_global_vars();
-            if let Ok(speakers_info) = get_speakers_info() {
-                vars.volatility.speakers_info = Some(speakers_info);
-                break;
-            }
-            thread::sleep(std::time::Duration::from_secs(1));
-        }));
+static mut SPEAKER_INFO_GETTER: Lazy<Thread> = Lazy::new(|| Thread::default());
+
+pub struct Thread {
+    pub runtime: Option<tokio::runtime::Runtime>,
+}
+
+impl Default for Thread {
+    fn default() -> Self {
+        Thread {
+            runtime: Some(tokio::runtime::Runtime::new().unwrap()),
+        }
     }
+}
+
+impl Thread {
+    pub fn start(&mut self) {
+        self.runtime.as_mut().unwrap().spawn(async move {
+            loop {
+                if get_global_vars().volatility.speakers_info.is_some() {
+                    break;
+                } else {
+                    match get_speakers_info().await {
+                        Ok(speakers_info) => {
+                            get_global_vars().volatility.speakers_info = Some(speakers_info);
+                        }
+                        Err(e) => {
+                            error!("Error: {}", e);
+                        }
+                    }
+                    thread::sleep(std::time::Duration::from_secs(1));
+                }
+            }
+        });
+    }
+
+    pub fn stop(&mut self) {
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
+        }
+    }
+}
+
+pub fn get_speaker_getter() -> &'static mut Thread {
+    unsafe { &mut SPEAKER_INFO_GETTER }
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,20 +84,23 @@ pub struct Style {
     pub base64_portrait: Option<String>,
 }
 
-pub fn get_speakers_info() -> Result<Vec<SpeakerInfo>, reqwest::Error> {
+pub async fn get_speakers_info() -> Result<Vec<SpeakerInfo>, reqwest::Error> {
     const URL: &str = "http://localhost:50032/v1/speakers";
-
     println!("Requesting speakers info from {}", URL);
 
+    debug!("getting speakers info");
     let body;
-    match reqwest::blocking::Client::new()
-        .get(URL)
-        .header("Content-Type", "application/json")
-        .send()
-    {
-        Ok(res) => body = res.text().unwrap(),
-        Err(e) => return Err(e),
+    match reqwest::Client::new().get(URL).send().await {
+        Ok(res) => {
+            debug!("get_speakers_info success");
+            body = res.text().await?;
+        }
+        Err(e) => {
+            println!("Failed to get speakers info: {}", e);
+            return Err(e);
+        }
     }
+    let speakers_info: Vec<SpeakerInfo> = serde_json::from_str(&body).unwrap();
 
-    Ok(serde_json::from_str(&body).unwrap())
+    Ok(speakers_info)
 }
