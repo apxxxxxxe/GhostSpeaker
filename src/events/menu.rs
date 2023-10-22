@@ -9,7 +9,8 @@ const DEFAULT_VOICE: &str = "default";
 
 pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let mut characters_info = String::new();
-    let mut division_setting = String::new();
+    let mut division_setting = String::from("-");
+    let mut no_engine_message = String::new();
 
     let refs = get_references(req);
     let ghost_name = refs.get(1).unwrap().to_string();
@@ -69,6 +70,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
             characters_info.push_str(&chara_info(&ghost_name, i));
         }
     } else {
+        no_engine_message = String::from("\\f[color,255,0,0]COEIROINK v2.0.0以降のエンジンの起動が必要です。\\f[color,default]\\n");
         for i in 0..characters.len() {
             characters_info.push_str(&format!(
                 "{}:\\n    -\\n",
@@ -96,14 +98,15 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
 
     let m = format!(
         "\
-    \\_q\
+    \\C\\c\\_q\
+    {}\
     {}\\n\
     {}\\n\
     \\![*]音量調整(共通) {}\
     \\![*]改行で一拍おく(ゴースト別) {}\
     \\n\\q[×,]\
     ",
-        ghost_name, characters_info, volume_changer, division_setting,
+        no_engine_message, ghost_name, characters_info, volume_changer, division_setting,
     );
 
     new_response_with_script(m.to_string(), true)
