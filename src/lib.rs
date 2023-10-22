@@ -62,8 +62,8 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
     get_global_vars().save();
-    get_queue().stop();
-    get_speaker_getter().stop();
+    futures::executor::block_on(get_queue().stop());
+    futures::executor::block_on(get_speaker_getter().stop());
 
     debug!("unload");
 

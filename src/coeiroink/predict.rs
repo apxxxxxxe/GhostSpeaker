@@ -104,7 +104,7 @@ pub fn get_speaker(ghost_name: String, scope: usize) -> CharacterVoice {
     speaker.clone()
 }
 
-pub fn predict_text(
+pub async fn predict_text(
     text: String,
     speaker_uuid: String,
     style_id: i32,
@@ -121,16 +121,17 @@ pub fn predict_text(
     let b = serde_json::to_string(&req).unwrap();
 
     let predict_res: PredictResponse;
-    match reqwest::blocking::Client::new()
+    match reqwest::Client::new()
         .post(URL)
         .header("Content-Type", "application/json")
         .header("Accept", "audio/wav")
         .body(b)
         .send()
+        .await
     {
         Ok(res) => match res.status() {
             StatusCode::OK => {
-                predict_res = serde_json::from_str(&res.text().unwrap()).unwrap();
+                predict_res = serde_json::from_str(&res.text().await.unwrap()).unwrap();
             }
             _ => {
                 println!("Error: {:?}", res);

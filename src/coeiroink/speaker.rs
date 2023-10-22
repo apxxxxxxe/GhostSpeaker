@@ -1,27 +1,34 @@
 use once_cell::sync::Lazy;
 use serde::Deserialize;
+use tokio::select;
 
-use std::thread;
+use async_std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::variables::get_global_vars;
 
 static mut SPEAKER_INFO_GETTER: Lazy<Thread> = Lazy::new(|| Thread::default());
 
 pub struct Thread {
-    pub runtime: Option<tokio::runtime::Runtime>,
+    pub runtime: tokio::runtime::Runtime,
+    pub stopper: Arc<Mutex<bool>>,
+    pub handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Default for Thread {
     fn default() -> Self {
         Thread {
-            runtime: Some(tokio::runtime::Runtime::new().unwrap()),
+            runtime: tokio::runtime::Runtime::new().unwrap(),
+            stopper: Arc::new(Mutex::new(false)),
+            handle: None,
         }
     }
 }
 
 impl Thread {
     pub fn start(&mut self) {
-        self.runtime.as_mut().unwrap().spawn(async move {
+        let stopper = self.stopper.clone();
+        self.handle = Some(self.runtime.spawn(async move {
             loop {
                 if get_global_vars().volatility.speakers_info.is_some() {
                     break;
@@ -34,16 +41,18 @@ impl Thread {
                             error!("Error: {}", e);
                         }
                     }
-                    thread::sleep(std::time::Duration::from_secs(1));
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                }
+                if *stopper.lock().await {
+                    break;
                 }
             }
-        });
+        }));
     }
 
-    pub fn stop(&mut self) {
-        if let Some(runtime) = self.runtime.take() {
-            runtime.shutdown_background();
-        }
+    pub async fn stop(&mut self) {
+        *self.stopper.lock().await = true;
+        futures::join!(self.handle.take().unwrap()).0.unwrap();
     }
 }
 
