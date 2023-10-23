@@ -2,24 +2,53 @@ use std::io::BufReader;
 use std::io::Cursor;
 
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
-use once_cell::sync::Lazy;
 
 use crate::variables::get_global_vars;
 
-static mut STREAM_HANDLE: Lazy<OutputStreamHandle> = Lazy::new(|| {
-    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-    stream_handle
-});
+static mut PLAYER: Option<Player> = None;
 
 pub struct Wave {
     pub data: Vec<u8>,
     pub duration_ms: u64,
 }
 
-pub async fn play_wav(wav: Vec<u8>) {
-    let stream_handle = unsafe { &*STREAM_HANDLE };
+pub struct Player {
+    stream: OutputStream,
+    stream_handle: OutputStreamHandle,
+    sink: Sink,
+}
+
+impl Player {
+    pub fn new() -> Self {
+        let (stream, stream_handle) = OutputStream::try_default().unwrap();
+        let sink = Sink::try_new(&stream_handle).unwrap();
+        Player {
+            stream,
+            stream_handle,
+            sink,
+        }
+    }
+}
+
+pub fn free_player() {
+    unsafe {
+        PLAYER = None;
+    }
+}
+
+pub fn get_player() -> &'static mut Player {
+    if unsafe { PLAYER.is_none() } {
+        unsafe {
+            PLAYER = Some(Player::new());
+        }
+    }
+    unsafe { PLAYER.as_mut().unwrap() }
+}
+
+pub fn play_wav(wav: Vec<u8>) {
     // Get a output stream handle to the default physical sound device
-    let sink = Sink::try_new(&stream_handle).unwrap();
+    let player = get_player();
+    let sink = &mut player.sink;
     sink.set_volume(get_global_vars().volume.unwrap_or(1.0));
     let file = BufReader::new(Cursor::new(wav));
     // Decode that sound file into a source

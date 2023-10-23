@@ -8,6 +8,7 @@ mod response;
 mod variables;
 
 use crate::coeiroink::speaker::get_speaker_getter;
+use crate::player::free_player;
 use crate::queue::get_queue;
 use crate::request::PluginRequest;
 use crate::variables::get_global_vars;
@@ -19,7 +20,7 @@ use std::fs::File;
 use std::panic;
 use std::path::Path;
 use winapi::ctypes::c_long;
-use winapi::shared::minwindef::{BOOL, HGLOBAL, TRUE};
+use winapi::shared::minwindef::{BOOL, DWORD, HGLOBAL, HINSTANCE, LPVOID, TRUE};
 
 #[macro_use]
 extern crate log;
@@ -62,8 +63,9 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
     get_global_vars().save();
-    futures::executor::block_on(get_queue().stop());
-    futures::executor::block_on(get_speaker_getter().stop());
+    get_queue().stop();
+    get_speaker_getter().stop();
+    free_player();
 
     debug!("unload");
 

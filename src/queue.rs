@@ -1,6 +1,7 @@
 use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::Mutex;
+use tokio_condvar::Condvar;
 
 use crate::coeiroink::predict::{get_speaker, predict_text};
 
@@ -11,12 +12,13 @@ use crate::variables::get_global_vars;
 pub static mut QUEUE: Option<Queue> = None;
 
 pub struct Queue {
-    runtime: tokio::runtime::Runtime,
-    stopper: Arc<Mutex<bool>>,
+    runtime: Option<tokio::runtime::Runtime>,
     predict_queue: Arc<Mutex<VecDeque<PredictArgs>>>,
-    predict_join_handle: Option<tokio::task::JoinHandle<()>>,
+    predict_handler: Option<tokio::task::JoinHandle<()>>,
+    predict_state: Arc<(Mutex<bool>, Condvar)>,
     play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
-    play_join_handle: Option<tokio::task::JoinHandle<()>>,
+    play_handler: Option<tokio::task::JoinHandle<()>>,
+    play_state: Arc<(Mutex<bool>, Condvar)>,
 }
 
 pub struct PredictArgs {
@@ -27,31 +29,32 @@ pub struct PredictArgs {
 impl Queue {
     pub fn new() -> Self {
         Self {
-            runtime: tokio::runtime::Runtime::new().unwrap(),
-            stopper: Arc::new(Mutex::new(false)),
+            runtime: Some(tokio::runtime::Runtime::new().unwrap()),
             predict_queue: Arc::new(Mutex::new(VecDeque::new())),
-            predict_join_handle: None,
+            predict_handler: None,
+            predict_state: Arc::new((Mutex::new(false), Condvar::new())),
             play_queue: Arc::new(Mutex::new(VecDeque::new())),
-            play_join_handle: None,
+            play_handler: None,
+            play_state: Arc::new((Mutex::new(false), Condvar::new())),
         }
     }
 
     pub fn init(&mut self) {
-        let predict_queue = self.predict_queue.clone();
-        let stopper = self.stopper.clone();
-        self.predict_join_handle = Some(self.runtime.spawn(async move {
+        let predict_queue_cln = Arc::clone(&self.predict_queue);
+        self.predict_handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
+            let mut i = 0;
             loop {
-                if *stopper.lock().await {
-                    break;
-                }
-
-                if predict_queue.lock().await.is_empty() {
-                    debug!("{}", "predict queue pause");
+                if predict_queue_cln.lock().await.is_empty() {
+                    if i == 10 {
+                        debug!("{}", "predict queue pause");
+                        i = 0;
+                    }
+                    i += 1;
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     continue;
                 }
 
-                if let Some(args) = predict_queue.lock().await.pop_front() {
+                if let Some(args) = predict_queue_cln.lock().await.pop_front() {
                     if let None = get_global_vars().volatility.speakers_info {
                         continue;
                     }
@@ -75,41 +78,45 @@ impl Queue {
             }
         }));
 
-        let play_queue = self.play_queue.clone();
-        let stopper = self.stopper.clone();
-        self.play_join_handle = Some(self.runtime.spawn(async move {
+        let play_queue_cln = self.play_queue.clone();
+        self.play_handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
+            let mut i = 0;
             loop {
-                if *stopper.lock().await {
-                    break;
-                }
-
-                if play_queue.lock().await.is_empty() {
-                    debug!("{}", "play queue pause");
+                if play_queue_cln.lock().await.is_empty() {
+                    if i == 10 {
+                        debug!("{}", "play queue pause");
+                        i = 0;
+                    }
+                    i += 1;
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     continue;
                 }
 
-                if let Some(data) = play_queue.lock().await.pop_front() {
+                if let Some(data) = play_queue_cln.lock().await.pop_front() {
                     debug!("{}", format!("play: {}", data.len()));
-                    play_wav(data).await;
+                    play_wav(data);
                 }
             }
         }));
     }
 
-    pub async fn stop(&mut self) {
-        *self.stopper.lock().await = true;
-        futures::future::join_all(vec![
-            self.predict_join_handle.take().unwrap(),
-            self.play_join_handle.take().unwrap(),
-        ])
-        .await;
+    pub fn stop(&mut self) {
+        debug!("{}", "stopping queue");
+        if let Some(handle) = self.predict_handler.take() {
+            handle.abort();
+        };
+        if let Some(handle) = self.play_handler.take() {
+            handle.abort();
+        };
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
+            debug!("{}", "shutdown speaker's runtime");
+        }
     }
 
     pub fn push_to_prediction(&self, args: PredictArgs) {
         debug!("pushing to prediction");
         futures::executor::block_on(async {
-            debug!("pushing to prediction");
             self.predict_queue.lock().await.push_back(args);
         });
     }
