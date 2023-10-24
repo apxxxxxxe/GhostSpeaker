@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 use tokio_condvar::Condvar;
 
 use crate::coeiroink::predict::{get_speaker, predict_text};
+use crate::coeiroink::utils::check_connection;
 
 use crate::format::split_dialog;
 use crate::player::play_wav;
@@ -56,6 +57,9 @@ impl Queue {
 
                 if let Some(args) = predict_queue_cln.lock().await.pop_front() {
                     if let None = get_global_vars().volatility.speakers_info {
+                        continue;
+                    }
+                    if !check_connection().await {
                         continue;
                     }
                     debug!("{}", format!("predicting: {}", args.text));
