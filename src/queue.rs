@@ -1,7 +1,6 @@
 use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::Mutex;
-use tokio_condvar::Condvar;
 
 use crate::coeiroink::predict::{get_speaker, predict_text};
 use crate::coeiroink::utils::check_connection;
@@ -16,10 +15,8 @@ pub struct Queue {
     runtime: Option<tokio::runtime::Runtime>,
     predict_queue: Arc<Mutex<VecDeque<PredictArgs>>>,
     predict_handler: Option<tokio::task::JoinHandle<()>>,
-    predict_state: Arc<(Mutex<bool>, Condvar)>,
     play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
     play_handler: Option<tokio::task::JoinHandle<()>>,
-    play_state: Arc<(Mutex<bool>, Condvar)>,
 }
 
 pub struct PredictArgs {
@@ -33,10 +30,8 @@ impl Queue {
             runtime: Some(tokio::runtime::Runtime::new().unwrap()),
             predict_queue: Arc::new(Mutex::new(VecDeque::new())),
             predict_handler: None,
-            predict_state: Arc::new((Mutex::new(false), Condvar::new())),
             play_queue: Arc::new(Mutex::new(VecDeque::new())),
             play_handler: None,
-            play_state: Arc::new((Mutex::new(false), Condvar::new())),
         }
     }
 

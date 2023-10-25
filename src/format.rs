@@ -5,11 +5,7 @@ pub struct Dialog {
     pub scope: usize,
 }
 
-pub fn split_dialog(
-    src: String,
-    devide_by_lines: bool,
-    split_by_punctuation: bool,
-) -> Vec<Dialog> {
+pub fn split_dialog(src: String, devide_by_lines: bool, split_by_punctuation: bool) -> Vec<Dialog> {
     let mut s = src.clone();
     s = delete_quick_section(s);
 

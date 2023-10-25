@@ -1,9 +1,5 @@
 use once_cell::sync::Lazy;
 use serde::Deserialize;
-use tokio::select;
-
-use async_std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::variables::get_global_vars;
 

@@ -20,7 +20,7 @@ use std::fs::File;
 use std::panic;
 use std::path::Path;
 use winapi::ctypes::c_long;
-use winapi::shared::minwindef::{BOOL, DWORD, HGLOBAL, HINSTANCE, LPVOID, TRUE};
+use winapi::shared::minwindef::{BOOL, HGLOBAL, TRUE};
 
 #[macro_use]
 extern crate log;
@@ -108,10 +108,12 @@ mod test {
         // init
         get_queue();
 
-        while !check_connection() {
-            println!("waiting...");
-            std::thread::sleep(Duration::from_secs(1));
-        }
+        futures::executor::block_on(async {
+            while !check_connection().await {
+                println!("waiting...");
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        });
 
         let pr = PluginRequest::parse(
             "\
