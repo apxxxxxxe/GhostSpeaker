@@ -7,7 +7,7 @@ use crate::coeiroink::utils::check_connection;
 
 use crate::format::split_dialog;
 use crate::player::play_wav;
-use crate::variables::get_global_vars;
+use crate::variables::{get_global_vars, CharacterVoice};
 
 pub static mut QUEUE: Option<Queue> = None;
 
@@ -51,28 +51,35 @@ impl Queue {
                 }
 
                 if let Some(args) = predict_queue_cln.lock().await.pop_front() {
-                    if let None = get_global_vars().volatility.speakers_info {
-                        continue;
-                    }
-                    if !check_connection().await {
-                        continue;
-                    }
-                    debug!("{}", format!("predicting: {}", args.text));
-                    let devide_by_lines = get_global_vars()
-                        .ghosts_voices
-                        .as_ref()
-                        .unwrap()
-                        .get(&args.ghost_name)
-                        .unwrap()
-                        .devide_by_lines;
-                    let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
-                    for dialog in split_dialog(args.text, devide_by_lines, speak_by_punctuation) {
-                        if dialog.text.is_empty() {
+                    if let Some(speakers) = get_global_vars().volatility.speakers_info.as_mut() {
+                        if !check_connection().await {
                             continue;
                         }
-                        let speaker = get_speaker(args.ghost_name.clone(), dialog.scope);
-                        predict_and_queue(dialog.text, speaker.spekaer_uuid, speaker.style_id)
-                            .await;
+                        debug!("{}", format!("predicting: {}", args.text));
+                        let devide_by_lines = get_global_vars()
+                            .ghosts_voices
+                            .as_ref()
+                            .unwrap()
+                            .get(&args.ghost_name)
+                            .unwrap()
+                            .devide_by_lines;
+                        let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
+                        for dialog in split_dialog(args.text, devide_by_lines, speak_by_punctuation)
+                        {
+                            if dialog.text.is_empty() {
+                                continue;
+                            }
+                            let mut speaker = get_speaker(args.ghost_name.clone(), dialog.scope);
+                            if speakers
+                                .iter()
+                                .find(|s| s.speaker_uuid == speaker.spekaer_uuid)
+                                .is_none()
+                            {
+                                speaker = CharacterVoice::default();
+                            }
+                            predict_and_queue(dialog.text, speaker.spekaer_uuid, speaker.style_id)
+                                .await;
+                        }
                     }
                 }
             }

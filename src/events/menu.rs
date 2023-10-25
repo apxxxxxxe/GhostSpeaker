@@ -5,7 +5,7 @@ use crate::variables::{get_global_vars, CharacterVoice, GhostVoiceInfo};
 
 use shiorust::message::Request;
 
-const DEFAULT_VOICE: &str = "default";
+const DEFAULT_VOICE: &str = "【削除された声質】";
 
 pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let mut characters_info = String::new();
