@@ -100,8 +100,10 @@ pub fn get_speaker(ghost_name: String, scope: usize) -> CharacterVoice {
         None => info = &g,
     }
 
-    let speaker = info.voices.get(scope).unwrap();
-    speaker.clone()
+    match info.voices.get(scope) {
+        Some(voice) => voice.clone(),
+        None => CharacterVoice::default(), // descript.txtにないキャラの場合
+    }
 }
 
 pub async fn predict_text(
