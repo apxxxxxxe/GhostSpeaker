@@ -5,7 +5,11 @@ pub struct Dialog {
     pub scope: usize,
 }
 
-pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
+pub fn split_dialog(
+    src: String,
+    devide_by_lines: bool,
+    split_by_punctuation: bool,
+) -> Vec<Dialog> {
     let mut s = src.clone();
     s = delete_quick_section(s);
 
@@ -25,7 +29,10 @@ pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
         if r.text.is_empty() {
             continue;
         }
-        let t = delims_re.replace_all(&r.text, "$0\u{0}");
+        let mut t = r.text.clone();
+        if split_by_punctuation {
+            t = delims_re.replace_all(&t, "$0\u{0}").to_string();
+        }
         for text in t.split('\u{0}') {
             if text.is_empty() {
                 continue;

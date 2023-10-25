@@ -16,6 +16,8 @@ pub struct GlobalVariables {
     // 読み上げ音量
     pub volume: Option<f32>,
 
+    pub speak_by_punctuation: Option<bool>,
+
     // ゴーストごとの声の情報
     pub ghosts_voices: Option<HashMap<String, GhostVoiceInfo>>,
 
@@ -29,6 +31,7 @@ impl GlobalVariables {
         Self {
             engine_path: None,
             volume: Some(1.0),
+            speak_by_punctuation: Some(false),
             ghosts_voices: Some(HashMap::new()),
             volatility: VolatilityVariables::default(),
         }
@@ -60,6 +63,9 @@ impl GlobalVariables {
         };
         if let Some(v) = vars.volume {
             self.volume = Some(v);
+        };
+        if let Some(s) = vars.speak_by_punctuation {
+            self.speak_by_punctuation = Some(s);
         };
         if let Some(g) = vars.ghosts_voices {
             self.ghosts_voices = Some(g);

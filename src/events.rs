@@ -57,6 +57,7 @@ fn get_event(id: &str) -> Option<fn(&Request) -> PluginResponse> {
         "OnVoiceSelected" => Some(on_voice_selected),
         "OnVolumeChange" => Some(on_volume_change),
         "OnDivisionSettingChanged" => Some(on_division_setting_changed),
+        "OnPunctuationSettingChanged" => Some(on_punctuation_setting_changed),
         "OnGhostBoot" => Some(on_ghost_boot),
         _ => None,
     }

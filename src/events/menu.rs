@@ -96,6 +96,18 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
         v, unit, refs[1], path_for_arg,
     ));
 
+    let p = get_global_vars().speak_by_punctuation.unwrap();
+    let switch: String;
+    if p {
+        switch = "有効".to_string();
+    } else {
+        switch = "無効".to_string();
+    }
+    let punctuation_changer = format!(
+        "【現在 \\q[{},OnPunctuationSettingChanged,{},{}]】\\n",
+        switch, ghost_name, path_for_arg
+    );
+
     let m = format!(
         "\
     \\C\\c\\_q\
@@ -103,10 +115,16 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     {}\\n\
     {}\\n\
     \\![*]音量調整(共通) {}\
+    \\![*]句読点ごとにCOIROINKへ送信(共通) {}\
     \\![*]改行で一拍おく(ゴースト別) {}\
     \\n\\q[×,]\
     ",
-        no_engine_message, ghost_name, characters_info, volume_changer, division_setting,
+        no_engine_message,
+        ghost_name,
+        characters_info,
+        volume_changer,
+        punctuation_changer,
+        division_setting,
     );
 
     new_response_with_script(m.to_string(), true)
@@ -213,6 +231,23 @@ pub fn on_division_setting_changed(req: &Request) -> PluginResponse {
         .get_mut(&ghost_name)
     {
         info.devide_by_lines = !info.devide_by_lines
+    }
+
+    let script = format!(
+        "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+        get_global_vars().volatility.plugin_uuid,
+        ghost_name,
+        path_for_arg
+    );
+    new_response_with_script(script, false)
+}
+
+pub fn on_punctuation_setting_changed(req: &Request) -> PluginResponse {
+    let refs = get_references(req);
+    let ghost_name = refs[0].to_string();
+    let path_for_arg = refs[1].to_string();
+    if let Some(s) = get_global_vars().speak_by_punctuation {
+        get_global_vars().speak_by_punctuation = Some(!s);
     }
 
     let script = format!(

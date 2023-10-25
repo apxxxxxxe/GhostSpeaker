@@ -70,7 +70,8 @@ impl Queue {
                         .get(&args.ghost_name)
                         .unwrap()
                         .devide_by_lines;
-                    for dialog in split_dialog(args.text, devide_by_lines) {
+                    let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
+                    for dialog in split_dialog(args.text, devide_by_lines, speak_by_punctuation) {
                         if dialog.text.is_empty() {
                             continue;
                         }
