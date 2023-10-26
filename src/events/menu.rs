@@ -110,13 +110,13 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
 
     let m = format!(
         "\
-    \\C\\c\\_q\
+    \\C\\c\\b[2]\\_q\
     {}\
     {}\\n\
     {}\\n\
-    \\![*]音量調整(共通) {}\
-    \\![*]句読点ごとにCOIROINKへ送信(共通) {}\
-    \\![*]改行で一拍おく(ゴースト別) {}\
+    \\![*]音量調整(共通)\\n    {}\
+    \\![*]句読点ごとにCOIROINKへ送信(共通)\\n    {}\
+    \\![*]改行で一拍おく(ゴースト別)\\n    {}\
     \\n\\q[×,]\
     ",
         no_engine_message,
@@ -137,7 +137,7 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
     let character_index = refs.get(2).unwrap().parse::<usize>().unwrap();
     let ghost_path = refs.get(3).unwrap();
 
-    let mut m = format!("\\_q{}\\n{}\\n", ghost_name, character_name);
+    let mut m = format!("\\C\\c\\b[2]\\_q{}\\n{}\\n", ghost_name, character_name);
     for speaker in get_global_vars()
         .volatility
         .speakers_info
