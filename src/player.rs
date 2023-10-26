@@ -13,8 +13,11 @@ pub struct Wave {
 }
 
 pub struct Player {
-    stream: OutputStream,
-    stream_handle: OutputStreamHandle,
+    // 直接アクセスされることはない
+    // ただし、drop時にストリームが閉じられるため、変数として保持しておく必要がある
+    _stream: OutputStream,
+    _stream_handle: OutputStreamHandle,
+
     sink: Sink,
 }
 
@@ -23,8 +26,8 @@ impl Player {
         let (stream, stream_handle) = OutputStream::try_default().unwrap();
         let sink = Sink::try_new(&stream_handle).unwrap();
         Player {
-            stream,
-            stream_handle,
+            _stream: stream,
+            _stream_handle: stream_handle,
             sink,
         }
     }
