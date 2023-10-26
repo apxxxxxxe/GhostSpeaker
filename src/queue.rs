@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use tokio::sync::{Mutex, Notify};
 
 use crate::coeiroink::predict::{get_speaker, predict_text};
+use crate::coeiroink::speaker::get_speaker_getter;
 use crate::coeiroink::utils::check_connection;
 
 use crate::format::split_dialog;
@@ -51,6 +52,7 @@ impl Queue {
                 if let Some(args) = predict_queue_cln.lock().await.pop_front() {
                     if let Some(speakers) = get_global_vars().volatility.speakers_info.as_mut() {
                         if !check_connection().await {
+                            get_speaker_getter().need_update();
                             continue;
                         }
                         debug!("{}", format!("predicting: {}", args.text));
