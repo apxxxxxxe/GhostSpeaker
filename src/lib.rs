@@ -8,7 +8,6 @@ mod response;
 mod variables;
 
 use crate::coeiroink::speaker::get_speaker_getter;
-use crate::player::free_player;
 use crate::queue::get_queue;
 use crate::request::PluginRequest;
 use crate::variables::get_global_vars;
@@ -65,7 +64,6 @@ pub extern "cdecl" fn unload() -> BOOL {
     get_global_vars().save();
     get_queue().stop();
     get_speaker_getter().stop();
-    free_player();
 
     debug!("unload");
 

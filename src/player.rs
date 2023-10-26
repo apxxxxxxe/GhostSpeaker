@@ -34,9 +34,13 @@ impl Player {
 }
 
 pub fn free_player() {
+    debug!("free_player");
+    get_player().sink.pause();
+    get_player().sink.stop();
     unsafe {
         PLAYER = None;
     }
+    debug!("free_player done");
 }
 
 pub fn get_player() -> &'static mut Player {
