@@ -1,0 +1,3 @@
+.git/,nonar,noupdate
+.github/,nonar,noupdate
+profile/,nonar,noupdate

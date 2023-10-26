@@ -1,0 +1,19 @@
+name: release-draft
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release-draft:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Zip output
+      run: |
+        zip -r release.zip * -x .git/\* -x .github/\* -x release.zip -x Cargo\* -x src/\* -x md5buildignore.txt
+    - name: Archive code coverage results
+      uses: actions/upload-artifact@v3
+      with:
+        name: release-test
+        path: release.zip
