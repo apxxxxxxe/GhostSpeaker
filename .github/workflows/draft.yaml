@@ -1,0 +1,41 @@
+name: release-draft
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release-draft:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        submodules: false
+    - name: Zip output
+      run: |
+        zip -r release.zip * md5core/\*
+    - name: Set current datetime as env variable
+      env:
+        TZ: 'Asia/Tokyo' # タイムゾーン指定
+      run: echo "DRAFT_TAG=$(date +'draft-%Y%m%d%H%M')" >> $GITHUB_ENV
+    - name: Create release
+      id: create_release
+      uses: actions/create-release@v1.0.0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ env.DRAFT_TAG }}
+        release_name: Release ${{ env.DRAFT_TAG }}
+        draft: true
+        prerelease: false
+    - name: Upload Release Asset
+      id: upload-release-asset
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release.zip
+        asset_name: GhostWardrobe.nar
+        asset_content_type: application/zip
