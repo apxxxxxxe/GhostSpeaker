@@ -9,7 +9,7 @@ pub fn split_dialog(src: String, devide_by_lines: bool, split_by_punctuation: bo
     let mut s = src.clone();
     s = delete_quick_section(s);
 
-    let lines_re = Regex::new(r"\\n").unwrap();
+    let lines_re = Regex::new(r"(\\n(\[[^\]]+\])?)+").unwrap();
     if devide_by_lines {
         s = lines_re.replace_all(&s, "$0。").to_string();
     }
