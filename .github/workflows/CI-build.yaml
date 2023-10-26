@@ -39,7 +39,10 @@ jobs:
         run: |
           git config --local user.email "calcium629@gmail.com"
           git config --local user.name "apxxxxxxe"
-          git add .
-          git commit -m "update md5 & dll" -a
           git pull
+          git add .
+          git reset HEAD .github
+          git checkout -- .\.github
+          git status
+          git commit -m "update md5 & dll" -a
           git push
