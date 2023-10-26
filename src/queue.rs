@@ -1,6 +1,6 @@
 use async_std::sync::Arc;
 use std::collections::VecDeque;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 use crate::coeiroink::predict::{get_speaker, predict_text};
 use crate::coeiroink::utils::check_connection;
@@ -14,8 +14,10 @@ pub static mut QUEUE: Option<Queue> = None;
 pub struct Queue {
     runtime: Option<tokio::runtime::Runtime>,
     predict_queue: Arc<Mutex<VecDeque<PredictArgs>>>,
+    predict_notifier: Arc<Notify>,
     predict_handler: Option<tokio::task::JoinHandle<()>>,
     play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
+    play_notifier: Arc<Notify>,
     play_handler: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -29,25 +31,21 @@ impl Queue {
         Self {
             runtime: Some(tokio::runtime::Runtime::new().unwrap()),
             predict_queue: Arc::new(Mutex::new(VecDeque::new())),
+            predict_notifier: Arc::new(Notify::new()),
             predict_handler: None,
             play_queue: Arc::new(Mutex::new(VecDeque::new())),
+            play_notifier: Arc::new(Notify::new()),
             play_handler: None,
         }
     }
 
     pub fn init(&mut self) {
         let predict_queue_cln = Arc::clone(&self.predict_queue);
+        let predict_notifier_cln = Arc::clone(&self.predict_notifier);
         self.predict_handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
-            let mut i = 0;
             loop {
                 if predict_queue_cln.lock().await.is_empty() {
-                    if i == 10 {
-                        debug!("{}", "predict queue pause");
-                        i = 0;
-                    }
-                    i += 1;
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    continue;
+                    predict_notifier_cln.notified().await;
                 }
 
                 if let Some(args) = predict_queue_cln.lock().await.pop_front() {
@@ -86,17 +84,11 @@ impl Queue {
         }));
 
         let play_queue_cln = self.play_queue.clone();
+        let play_notifier_cln = self.play_notifier.clone();
         self.play_handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
-            let mut i = 0;
             loop {
                 if play_queue_cln.lock().await.is_empty() {
-                    if i == 10 {
-                        debug!("{}", "play queue pause");
-                        i = 0;
-                    }
-                    i += 1;
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    continue;
+                    play_notifier_cln.notified().await;
                 }
 
                 if let Some(data) = play_queue_cln.lock().await.pop_front() {
@@ -126,6 +118,8 @@ impl Queue {
         futures::executor::block_on(async {
             self.predict_queue.lock().await.push_back(args);
         });
+        self.predict_notifier.notify_one();
+        debug!("pushed and notified to prediction");
     }
 
     fn push_to_play(&self, data: Vec<u8>) {
@@ -133,6 +127,8 @@ impl Queue {
         futures::executor::block_on(async {
             self.play_queue.lock().await.push_back(data);
         });
+        self.play_notifier.notify_one();
+        debug!("pushed and notified to play");
     }
 }
 
