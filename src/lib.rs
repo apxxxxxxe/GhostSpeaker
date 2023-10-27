@@ -92,8 +92,8 @@ pub extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
 mod test {
     use crate::coeiroink::utils::check_connection;
     use crate::events::handle_request;
-    use crate::queue::get_queue;
     use crate::plugin::request::PluginRequest;
+    use crate::queue::get_queue;
     use crate::variables::get_global_vars;
     use shiorust::message::Parser;
     use std::time::Duration;

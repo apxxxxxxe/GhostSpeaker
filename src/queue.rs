@@ -92,8 +92,15 @@ impl Queue {
                             {
                                 speaker = CharacterVoice::default();
                             }
-                            predict_and_queue(dialog.text, speaker.spekaer_uuid, speaker.style_id)
-                                .await;
+                            let result =
+                                predict_text(dialog.text, speaker.spekaer_uuid, speaker.style_id)
+                                    .await;
+                            if let Ok(res) = result {
+                                debug!("pushing to play");
+                                get_queue().push_to_play(res.data);
+                            } else {
+                                debug!("predict failed: {}", result.err().unwrap());
+                            }
                         }
                     }
                 }
@@ -177,15 +184,6 @@ impl Queue {
         });
         self.play_notifier.notify_one();
         debug!("pushed and notified to play");
-    }
-}
-
-async fn predict_and_queue(text: String, speaker_uuid: String, style_id: i32) {
-    let result = predict_text(text, speaker_uuid, style_id).await;
-    if let Ok(res) = result {
-        get_queue().push_to_play(res.data);
-    } else {
-        debug!("predict failed: {}", result.err().unwrap());
     }
 }
 
