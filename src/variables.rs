@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::engine::{Engine, ENGINE_COEIROINK};
+use crate::engine::{Engine, ENGINE_COEIROINK, ENGINE_VOICEVOX};
 use crate::speaker::SpeakerInfo;
 
 const VAR_PATH: &str = "vars.json";
@@ -115,7 +115,7 @@ pub struct GhostVoiceInfo {
 impl Default for GhostVoiceInfo {
     fn default() -> Self {
         let mut v = Vec::new();
-        v.resize(10, CharacterVoice::default());
+        v.resize(10, CharacterVoice::default_voicevox());
         GhostVoiceInfo {
             devide_by_lines: false,
             voices: v,
@@ -126,7 +126,7 @@ impl Default for GhostVoiceInfo {
 impl GhostVoiceInfo {
     pub fn new(character_count: usize) -> Self {
         let mut v = Vec::new();
-        v.resize(character_count, CharacterVoice::default());
+        v.resize(character_count, CharacterVoice::default_voicevox());
         GhostVoiceInfo {
             devide_by_lines: false,
             voices: v,
@@ -141,13 +141,21 @@ pub struct CharacterVoice {
     pub style_id: i32,
 }
 
-impl Default for CharacterVoice {
-    fn default() -> Self {
+impl CharacterVoice {
+    pub fn default_coeiroink() -> Self {
         // つくよみちゃん-れいせい
         CharacterVoice {
             engine: ENGINE_COEIROINK,
             speaker_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
             style_id: 0,
+        }
+    }
+    pub fn default_voicevox() -> Self {
+        // ずんだもん-ノーマル
+        CharacterVoice {
+            engine: ENGINE_VOICEVOX,
+            speaker_uuid: String::from("388f246b-8c41-4ac1-8e2d-5d79f3ff56d9"),
+            style_id: 3,
         }
     }
 }
@@ -185,8 +193,19 @@ pub fn get_character_voice(ghost_name: String, scope: usize) -> CharacterVoice {
         None => info = &g,
     }
 
+    let default_voice: CharacterVoice;
+    if get_global_vars()
+        .volatility
+        .speakers_info
+        .contains_key(&ENGINE_VOICEVOX)
+    {
+        default_voice = CharacterVoice::default_voicevox();
+    } else {
+        default_voice = CharacterVoice::default_coeiroink();
+    }
+
     match info.voices.get(scope) {
         Some(voice) => voice.clone(),
-        None => CharacterVoice::default(), // descript.txtにないキャラの場合
+        None => default_voice, // descript.txtにないキャラの場合
     }
 }

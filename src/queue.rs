@@ -66,12 +66,13 @@ impl Queue {
                     parg = guard.pop_front();
                 }
                 if let Some(args) = parg {
-                    if !check_connection(ENGINE_COEIROINK).await {
-                        coeiroink::speaker::get_speaker_getter().need_update();
+                    let is_coeiroink_connected = check_connection(ENGINE_COEIROINK).await;
+                    let is_voicevox_connected = check_connection(ENGINE_VOICEVOX).await;
+                    if !is_coeiroink_connected && !is_voicevox_connected {
+                        debug!("no engine connected: skip: {}", args.text);
+                        continue;
                     }
-                    if !check_connection(ENGINE_VOICEVOX).await {
-                        voicevox::speaker::get_speaker_getter().need_update();
-                    }
+
                     debug!("{}", format!("predicting: {}", args.text));
                     let devide_by_lines = get_global_vars()
                         .ghosts_voices
@@ -98,7 +99,11 @@ impl Queue {
                                 .is_none()
                             {
                                 // TODO: エンジン起動状況によって変える
-                                speaker = CharacterVoice::default();
+                                if is_voicevox_connected {
+                                    speaker = CharacterVoice::default_voicevox();
+                                } else {
+                                    speaker = CharacterVoice::default_coeiroink();
+                                }
                             }
                         }
                         let result;

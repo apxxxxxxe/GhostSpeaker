@@ -1,4 +1,4 @@
-use crate::engine::{ENGINE_COEIROINK, ENGINE_VOICEVOX};
+use crate::engine::{engine_name, ENGINE_COEIROINK, ENGINE_VOICEVOX};
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
@@ -25,6 +25,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
             info.push_str(&format!("{}:\\n    ", c));
         }
         let mut voice = String::from(DEFAULT_VOICE);
+        let mut color = "";
         if let Some(si) = get_global_vars().ghosts_voices.as_ref().unwrap().get(name) {
             let switch: String;
             if si.devide_by_lines {
@@ -54,11 +55,15 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
                             );
                         }
                     }
+                } else {
+                    color = "\\f[color,128,128,128]";
+                    voice = format!("【使用不可: {}の起動が必要】", engine_name(c.engine));
                 }
             }
         };
         info + &format!(
-            "\\q[{},OnVoiceSelecting,{},{},{},{}]\\n",
+            "{}\\q[{},OnVoiceSelecting,{},{},{},{}]\\f[color,default]\\n",
+            color,
             voice,
             ghost_name,
             characters.get(index).unwrap_or(&String::from("")),
@@ -195,13 +200,14 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
     {
         let voices = &mut info.voices;
         if voices.len() - 1 < character_index {
-            voices.resize(character_index + 1, CharacterVoice::default());
+            voices.resize(character_index + 1, CharacterVoice::default_voicevox());
         }
         voices.remove(character_index);
         voices.insert(character_index, voice)
     } else {
         let mut g = GhostVoiceInfo::default();
-        g.voices.resize(character_index, CharacterVoice::default());
+        g.voices
+            .resize(character_index, CharacterVoice::default_voicevox());
         g.voices.insert(character_index, voice);
         get_global_vars()
             .ghosts_voices

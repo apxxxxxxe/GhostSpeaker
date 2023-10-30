@@ -27,23 +27,20 @@ impl Default for Thread {
 
 impl Thread {
     pub fn start(&mut self) {
-        let need_update = self.need_update.clone();
         self.handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
             loop {
                 let sinfo = &mut get_global_vars().volatility.speakers_info;
-                if sinfo.contains_key(&ENGINE_COEIROINK) {
-                    need_update.notified().await;
-                    sinfo.remove(&ENGINE_COEIROINK);
-                }
                 match get_speakers_info().await {
                     Ok(speakers_info) => {
                         sinfo.insert(ENGINE_COEIROINK, speakers_info);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     }
                     Err(e) => {
                         error!("Error: {}", e);
+                        sinfo.remove(&ENGINE_COEIROINK);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                     }
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }));
     }
