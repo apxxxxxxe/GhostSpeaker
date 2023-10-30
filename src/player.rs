@@ -63,5 +63,4 @@ pub fn play_wav(wav: Vec<u8>) {
             error!("Error: {}", e);
         }
     }
-    sink.sleep_until_end();
 }
