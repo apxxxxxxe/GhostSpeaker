@@ -130,7 +130,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
 
     let m = format!(
         "\
-    \\C\\c\\b[2]\\_q\
+    \\b[2]\\_q\
     {}\
     {}\\n\
     {}\\n\
