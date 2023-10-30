@@ -2,9 +2,9 @@ use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::{Mutex, Notify};
 
-use crate::coeiroink::predict::{get_speaker, predict_text};
-use crate::coeiroink::speaker::get_speaker_getter;
-use crate::coeiroink::utils::check_connection;
+use crate::engine::coeiroink::predict::{get_speaker, predict_text};
+use crate::engine::coeiroink::speaker::get_speaker_getter;
+use crate::engine::coeiroink::utils::check_connection;
 use crate::player::free_player;
 
 use crate::format::split_dialog;
@@ -65,42 +65,45 @@ impl Queue {
                     parg = guard.pop_front();
                 }
                 if let Some(args) = parg {
-                    if let Some(speakers) = get_global_vars().volatility.speakers_info.as_mut() {
-                        if !check_connection().await {
-                            get_speaker_getter().need_update();
+                    if !check_connection().await {
+                        get_speaker_getter().need_update();
+                        continue;
+                    }
+                    debug!("{}", format!("predicting: {}", args.text));
+                    let devide_by_lines = get_global_vars()
+                        .ghosts_voices
+                        .as_ref()
+                        .unwrap()
+                        .get(&args.ghost_name)
+                        .unwrap()
+                        .devide_by_lines;
+                    let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
+                    for dialog in split_dialog(args.text, devide_by_lines, speak_by_punctuation) {
+                        if dialog.text.is_empty() {
                             continue;
                         }
-                        debug!("{}", format!("predicting: {}", args.text));
-                        let devide_by_lines = get_global_vars()
-                            .ghosts_voices
-                            .as_ref()
-                            .unwrap()
-                            .get(&args.ghost_name)
-                            .unwrap()
-                            .devide_by_lines;
-                        let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
-                        for dialog in split_dialog(args.text, devide_by_lines, speak_by_punctuation)
+                        let mut speaker = get_speaker(args.ghost_name.clone(), dialog.scope);
+                        if let Some(speakers_by_engine) = get_global_vars()
+                            .volatility
+                            .speakers_info
+                            .get(&speaker.engine)
                         {
-                            if dialog.text.is_empty() {
-                                continue;
-                            }
-                            let mut speaker = get_speaker(args.ghost_name.clone(), dialog.scope);
-                            if speakers
+                            if speakers_by_engine
                                 .iter()
-                                .find(|s| s.speaker_uuid == speaker.spekaer_uuid)
+                                .find(|s| s.speaker_uuid == speaker.speaker_uuid)
                                 .is_none()
                             {
+                                // TODO: エンジン起動状況によって変える
                                 speaker = CharacterVoice::default();
                             }
-                            let result =
-                                predict_text(dialog.text, speaker.spekaer_uuid, speaker.style_id)
-                                    .await;
-                            if let Ok(res) = result {
-                                debug!("pushing to play");
-                                get_queue().push_to_play(res);
-                            } else {
-                                debug!("predict failed: {}", result.err().unwrap());
-                            }
+                        }
+                        let result =
+                            predict_text(dialog.text, speaker.speaker_uuid, speaker.style_id).await;
+                        if let Ok(res) = result {
+                            debug!("pushing to play");
+                            get_queue().push_to_play(res);
+                        } else {
+                            debug!("predict failed: {}", result.err().unwrap());
                         }
                     }
                 }

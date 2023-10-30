@@ -18,29 +18,29 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let characters = count_characters(ghost_description);
     let path_for_arg = refs[4].to_string().replace("\\", "\\\\");
 
-    if get_global_vars().volatility.speakers_info.is_some() {
-        let speakers_info = get_global_vars().volatility.speakers_info.as_ref().unwrap();
-        let mut chara_info = |name: &String, index: usize| -> String {
-            let mut info = format!("\\\\{} ", index);
-            if let Some(c) = characters.get(index) {
-                info.push_str(&format!("{}:\\n    ", c));
+    let speakers_info = &mut get_global_vars().volatility.speakers_info;
+    let mut chara_info = |name: &String, index: usize| -> String {
+        let mut info = format!("\\\\{} ", index);
+        if let Some(c) = characters.get(index) {
+            info.push_str(&format!("{}:\\n    ", c));
+        }
+        let mut voice = String::from(DEFAULT_VOICE);
+        if let Some(si) = get_global_vars().ghosts_voices.as_ref().unwrap().get(name) {
+            let switch: String;
+            if si.devide_by_lines {
+                switch = "有効".to_string();
+            } else {
+                switch = "無効".to_string();
             }
-            let mut voice = String::from(DEFAULT_VOICE);
-            if let Some(si) = get_global_vars().ghosts_voices.as_ref().unwrap().get(name) {
-                let switch: String;
-                if si.devide_by_lines {
-                    switch = "有効".to_string();
-                } else {
-                    switch = "無効".to_string();
-                }
-                division_setting = format!(
-                    "【現在 \\q[{},OnDivisionSettingChanged,{},{}]】\\n",
-                    switch, ghost_name, path_for_arg
-                );
-                if let Some(c) = si.voices.get(index) {
-                    if let Some(speaker) = speakers_info
+            division_setting = format!(
+                "【現在 \\q[{},OnDivisionSettingChanged,{},{}]】\\n",
+                switch, ghost_name, path_for_arg
+            );
+            if let Some(c) = si.voices.get(index) {
+                if let Some(speakers_by_engine) = speakers_info.get(&c.engine) {
+                    if let Some(speaker) = speakers_by_engine
                         .iter()
-                        .find(|s| s.speaker_uuid == c.spekaer_uuid)
+                        .find(|s| s.speaker_uuid == c.speaker_uuid)
                     {
                         if let Some(style) = speaker
                             .styles
@@ -55,29 +55,31 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
                         }
                     }
                 }
-            };
-            info + &format!(
-                "\\q[{},OnVoiceSelecting,{},{},{},{}]\\n",
-                voice,
-                ghost_name,
-                characters.get(index).unwrap_or(&String::from("")),
-                index,
-                path_for_arg,
-            )
+            }
         };
+        info + &format!(
+            "\\q[{},OnVoiceSelecting,{},{},{},{}]\\n",
+            voice,
+            ghost_name,
+            characters.get(index).unwrap_or(&String::from("")),
+            index,
+            path_for_arg,
+        )
+    };
 
-        for i in 0..characters.len() {
-            characters_info.push_str(&chara_info(&ghost_name, i));
-        }
-    } else {
-        no_engine_message = String::from("\\f[color,255,0,0]COEIROINK v2.0.0以降のエンジンの起動が必要です。\\f[color,default]\\n");
-        for i in 0..characters.len() {
-            characters_info.push_str(&format!(
-                "{}:\\n    -\\n",
-                characters.get(i).unwrap_or(&String::from("")),
-            ));
-        }
+    for i in 0..characters.len() {
+        characters_info.push_str(&chara_info(&ghost_name, i));
     }
+
+    // if get_global_vars().volatility.speakers_info.is_some() {
+    //     no_engine_message = String::from("\\f[color,255,0,0]COEIROINK v2.0.0以降のエンジンの起動が必要です。\\f[color,default]\\n");
+    //     for i in 0..characters.len() {
+    //         characters_info.push_str(&format!(
+    //             "{}:\\n    -\\n",
+    //             characters.get(i).unwrap_or(&String::from("")),
+    //         ));
+    //     }
+    // }
 
     let unit: f32 = 0.05;
     let v = get_global_vars().volume.unwrap();
@@ -136,26 +138,24 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
     let character_name = refs.get(1).unwrap();
     let character_index = refs.get(2).unwrap().parse::<usize>().unwrap();
     let ghost_path = refs.get(3).unwrap();
+    let speakers_info = &mut get_global_vars().volatility.speakers_info;
 
     let mut m = format!("\\C\\c\\b[2]\\_q{}\\n{}\\n", ghost_name, character_name);
-    for speaker in get_global_vars()
-        .volatility
-        .speakers_info
-        .as_ref()
-        .unwrap()
-        .iter()
-    {
-        for style in speaker.styles.iter() {
-            m.push_str(&format!(
-                "\\![*]\\q[{} | {},OnVoiceSelected,{},{},{},{},{}]\\n",
-                speaker.speaker_name,
-                style.style_name.as_ref().unwrap(),
-                ghost_name,
-                character_index,
-                speaker.speaker_uuid,
-                style.style_id.unwrap(),
-                ghost_path,
-            ));
+    for (engine, speakers) in speakers_info.iter() {
+        for speaker in speakers.iter() {
+            for style in speaker.styles.iter() {
+                m.push_str(&format!(
+                    "\\![*]\\q[{} | {},OnVoiceSelected,{},{},{},{},{},{}]\\n",
+                    speaker.speaker_name,
+                    style.style_name.as_ref().unwrap(),
+                    ghost_name,
+                    character_index,
+                    engine,
+                    speaker.speaker_uuid,
+                    style.style_id.unwrap(),
+                    ghost_path,
+                ));
+            }
         }
     }
 
@@ -167,12 +167,14 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
     let refs = get_references(req);
     let ghost_name = refs.get(0).unwrap();
     let character_index = refs.get(1).unwrap().parse::<usize>().unwrap();
-    let speaker_uuid = refs.get(2).unwrap();
-    let style_id = refs.get(3).unwrap();
-    let ghost_path = refs.get(4).unwrap();
+    let engine = refs.get(2).unwrap();
+    let speaker_uuid = refs.get(3).unwrap();
+    let style_id = refs.get(4).unwrap();
+    let ghost_path = refs.get(5).unwrap();
 
     let voice = CharacterVoice {
-        spekaer_uuid: speaker_uuid.to_string(),
+        engine: engine.to_string().parse::<i32>().unwrap(),
+        speaker_uuid: speaker_uuid.to_string(),
         style_id: style_id.to_string().parse::<i32>().unwrap(),
     };
 

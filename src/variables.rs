@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::coeiroink::speaker::SpeakerInfo;
+use crate::engine::coeiroink::speaker::SpeakerInfo;
+use crate::engine::{Engine, ENGINE_COEIROINK};
 
 const VAR_PATH: &str = "vars.json";
 static mut GLOBALVARS: Option<GlobalVariables> = None;
@@ -135,7 +136,8 @@ impl GhostVoiceInfo {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CharacterVoice {
-    pub spekaer_uuid: String,
+    pub engine: Engine,
+    pub speaker_uuid: String,
     pub style_id: i32,
 }
 
@@ -143,20 +145,21 @@ impl Default for CharacterVoice {
     fn default() -> Self {
         // つくよみちゃん-れいせい
         CharacterVoice {
-            spekaer_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
+            engine: ENGINE_COEIROINK,
+            speaker_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
             style_id: 0,
         }
     }
 }
 
-// ゴーストのグローバル変数のうち、揮発性(起動毎にリセットされる)なもの
+// ゴーストのグローバル変数のうち、揮発性(起動毎にリセットされる)のもの
 pub struct VolatilityVariables {
     pub plugin_uuid: String,
 
     // プラグインのディレクトリ
     pub dll_dir: String,
 
-    pub speakers_info: Option<Vec<SpeakerInfo>>,
+    pub speakers_info: HashMap<Engine, Vec<SpeakerInfo>>,
 }
 
 impl Default for VolatilityVariables {
@@ -164,7 +167,7 @@ impl Default for VolatilityVariables {
         Self {
             plugin_uuid: "1e1e0813-f16f-409e-b870-2c36b9084732".to_string(),
             dll_dir: "".to_string(),
-            speakers_info: None,
+            speakers_info: HashMap::new(),
         }
     }
 }

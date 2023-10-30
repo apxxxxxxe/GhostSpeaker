@@ -1,4 +1,4 @@
-mod coeiroink;
+mod engine;
 mod events;
 mod format;
 mod player;
@@ -6,7 +6,7 @@ mod plugin;
 mod queue;
 mod variables;
 
-use crate::coeiroink::speaker::get_speaker_getter;
+use crate::engine::coeiroink::speaker::get_speaker_getter;
 use crate::plugin::request::PluginRequest;
 use crate::queue::get_queue;
 use crate::variables::get_global_vars;
@@ -90,7 +90,7 @@ pub extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
 
 #[cfg(test)]
 mod test {
-    use crate::coeiroink::utils::check_connection;
+    use crate::engine::coeiroink::utils::check_connection;
     use crate::events::handle_request;
     use crate::plugin::request::PluginRequest;
     use crate::queue::get_queue;
