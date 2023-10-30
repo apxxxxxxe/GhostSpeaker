@@ -5,7 +5,7 @@ use crate::engine::{Engine, ENGINE_COEIROINK, ENGINE_VOICEVOX};
 use crate::speaker::SpeakerInfo;
 
 pub const DUMMY_VOICE_UUID: &str = "dummy";
-const VAR_PATH: &str = "vars.json";
+const VAR_PATH: &str = "vars.yaml";
 static mut GLOBALVARS: Option<GlobalVariables> = None;
 
 #[derive(Serialize, Deserialize)]
@@ -43,7 +43,7 @@ impl GlobalVariables {
         let path =
             std::path::Path::new(get_global_vars().volatility.dll_dir.as_str()).join(VAR_PATH);
         debug!("Loading variables from {}", path.display());
-        let json_str = match std::fs::read_to_string(path) {
+        let yaml_str = match std::fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) => {
                 error!("Failed to load variables. {}", e);
@@ -51,7 +51,7 @@ impl GlobalVariables {
             }
         };
 
-        let vars: GlobalVariables = match serde_json::from_str(&json_str) {
+        let vars: GlobalVariables = match serde_yaml::from_str(&yaml_str) {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to parse variables. {}", e);
@@ -79,14 +79,14 @@ impl GlobalVariables {
     }
 
     pub fn save(&self) {
-        let json_str = match serde_json::to_string_pretty(self) {
+        let yaml_str = match serde_yaml::to_string(self) {
             Ok(s) => s,
             Err(e) => {
                 error!("Failed to serialize variables. {}", e);
                 return;
             }
         };
-        match std::fs::write(VAR_PATH, json_str) {
+        match std::fs::write(VAR_PATH, yaml_str) {
             Ok(_) => (),
             Err(e) => {
                 error!("Failed to save variables. {}", e);
