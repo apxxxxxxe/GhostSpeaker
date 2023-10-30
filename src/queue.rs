@@ -97,7 +97,7 @@ impl Queue {
                                     .await;
                             if let Ok(res) = result {
                                 debug!("pushing to play");
-                                get_queue().push_to_play(res.data);
+                                get_queue().push_to_play(res);
                             } else {
                                 debug!("predict failed: {}", result.err().unwrap());
                             }

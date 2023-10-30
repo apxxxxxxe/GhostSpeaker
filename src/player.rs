@@ -7,11 +7,6 @@ use crate::variables::get_global_vars;
 
 static mut PLAYER: Option<Player> = None;
 
-pub struct Wave {
-    pub data: Vec<u8>,
-    pub duration_ms: u64,
-}
-
 pub struct Player {
     // 直接アクセスされることはない
     // ただし、drop時にストリームが閉じられるため、変数として保持しておく必要がある
@@ -59,8 +54,14 @@ pub fn play_wav(wav: Vec<u8>) {
     sink.set_volume(get_global_vars().volume.unwrap_or(1.0));
     let file = BufReader::new(Cursor::new(wav));
     // Decode that sound file into a source
-    let source = Decoder::new(file).unwrap();
-    // Play the sound directly on the device
-    sink.append(source);
+    match Decoder::new(file) {
+        Ok(source) => {
+            // Add the source to the sink
+            sink.append(source);
+        }
+        Err(e) => {
+            error!("Error: {}", e);
+        }
+    }
     sink.sleep_until_end();
 }
