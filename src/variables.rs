@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::engine::coeiroink::speaker::SpeakerInfo;
 use crate::engine::{Engine, ENGINE_COEIROINK};
+use crate::speaker::SpeakerInfo;
 
 const VAR_PATH: &str = "vars.json";
 static mut GLOBALVARS: Option<GlobalVariables> = None;
@@ -169,5 +169,24 @@ impl Default for VolatilityVariables {
             dll_dir: "".to_string(),
             speakers_info: HashMap::new(),
         }
+    }
+}
+
+pub fn get_character_voice(ghost_name: String, scope: usize) -> CharacterVoice {
+    let info: &GhostVoiceInfo;
+    let g = GhostVoiceInfo::default();
+    match &get_global_vars()
+        .ghosts_voices
+        .as_ref()
+        .unwrap()
+        .get(&ghost_name)
+    {
+        Some(i) => info = i,
+        None => info = &g,
+    }
+
+    match info.voices.get(scope) {
+        Some(voice) => voice.clone(),
+        None => CharacterVoice::default(), // descript.txtにないキャラの場合
     }
 }

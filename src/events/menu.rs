@@ -1,3 +1,4 @@
+use crate::engine::{ENGINE_COEIROINK, ENGINE_VOICEVOX};
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
@@ -5,12 +6,11 @@ use crate::variables::{get_global_vars, CharacterVoice, GhostVoiceInfo};
 
 use shiorust::message::Request;
 
-const DEFAULT_VOICE: &str = "【削除された声質】";
+const DEFAULT_VOICE: &str = "【不明】";
 
 pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let mut characters_info = String::new();
     let mut division_setting = String::from("-");
-    let mut no_engine_message = String::new();
 
     let refs = get_references(req);
     let ghost_name = refs.get(1).unwrap().to_string();
@@ -71,15 +71,16 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
         characters_info.push_str(&chara_info(&ghost_name, i));
     }
 
-    // if get_global_vars().volatility.speakers_info.is_some() {
-    //     no_engine_message = String::from("\\f[color,255,0,0]COEIROINK v2.0.0以降のエンジンの起動が必要です。\\f[color,default]\\n");
-    //     for i in 0..characters.len() {
-    //         characters_info.push_str(&format!(
-    //             "{}:\\n    -\\n",
-    //             characters.get(i).unwrap_or(&String::from("")),
-    //         ));
-    //     }
-    // }
+    let mut engine_status = String::new();
+    if speakers_info.contains_key(&ENGINE_VOICEVOX) {
+        engine_status += "VOICEVOX: \\f[color,0,128,0]起動中\\f[color,default]\\n";
+    }
+    if speakers_info.contains_key(&ENGINE_COEIROINK) {
+        engine_status += "COEIROINK: \\f[color,0,128,0]起動中\\f[color,default]\\n";
+    }
+    if !engine_status.is_empty() {
+        engine_status += "\\n";
+    }
 
     let unit: f32 = 0.05;
     let v = get_global_vars().volume.unwrap();
@@ -121,7 +122,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     \\![*]改行で一拍おく(ゴースト別)\\n    {}\
     \\n\\q[×,]\
     ",
-        no_engine_message,
+        engine_status,
         ghost_name,
         characters_info,
         volume_changer,

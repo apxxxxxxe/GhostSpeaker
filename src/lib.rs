@@ -4,9 +4,12 @@ mod format;
 mod player;
 mod plugin;
 mod queue;
+mod speaker;
+mod utils;
 mod variables;
 
-use crate::engine::coeiroink::speaker::get_speaker_getter;
+use crate::engine::coeiroink;
+use crate::engine::voicevox;
 use crate::plugin::request::PluginRequest;
 use crate::queue::get_queue;
 use crate::variables::get_global_vars;
@@ -51,7 +54,8 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
         debug!("{}", panic_info);
     }));
 
-    get_speaker_getter().start();
+    coeiroink::speaker::get_speaker_getter().start();
+    voicevox::speaker::get_speaker_getter().start();
 
     debug!("load");
 
@@ -62,7 +66,8 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 pub extern "cdecl" fn unload() -> BOOL {
     get_global_vars().save();
     get_queue().stop();
-    get_speaker_getter().stop();
+    coeiroink::speaker::get_speaker_getter().stop();
+    voicevox::speaker::get_speaker_getter().stop();
 
     debug!("unload");
 
@@ -90,10 +95,11 @@ pub extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
 
 #[cfg(test)]
 mod test {
-    use crate::engine::coeiroink::utils::check_connection;
+    use crate::engine::ENGINE_COEIROINK;
     use crate::events::handle_request;
     use crate::plugin::request::PluginRequest;
     use crate::queue::get_queue;
+    use crate::utils::check_connection;
     use crate::variables::get_global_vars;
     use shiorust::message::Parser;
     use std::time::Duration;
@@ -106,7 +112,7 @@ mod test {
         get_queue();
 
         futures::executor::block_on(async {
-            while !check_connection().await {
+            while !check_connection(ENGINE_COEIROINK).await {
                 println!("waiting...");
                 std::thread::sleep(Duration::from_secs(1));
             }

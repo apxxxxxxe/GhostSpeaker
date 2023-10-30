@@ -2,14 +2,15 @@ use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::{Mutex, Notify};
 
-use crate::engine::coeiroink::predict::{get_speaker, predict_text};
-use crate::engine::coeiroink::speaker::get_speaker_getter;
-use crate::engine::coeiroink::utils::check_connection;
+use crate::engine::coeiroink;
+use crate::engine::voicevox;
+use crate::engine::{ENGINE_COEIROINK, ENGINE_VOICEVOX};
 use crate::player::free_player;
+use crate::utils::check_connection;
 
 use crate::format::split_dialog;
 use crate::player::play_wav;
-use crate::variables::{get_global_vars, CharacterVoice};
+use crate::variables::{get_character_voice, get_global_vars, CharacterVoice};
 
 pub static mut QUEUE: Option<Queue> = None;
 
@@ -65,9 +66,11 @@ impl Queue {
                     parg = guard.pop_front();
                 }
                 if let Some(args) = parg {
-                    if !check_connection().await {
-                        get_speaker_getter().need_update();
-                        continue;
+                    if !check_connection(ENGINE_COEIROINK).await {
+                        coeiroink::speaker::get_speaker_getter().need_update();
+                    }
+                    if !check_connection(ENGINE_VOICEVOX).await {
+                        voicevox::speaker::get_speaker_getter().need_update();
                     }
                     debug!("{}", format!("predicting: {}", args.text));
                     let devide_by_lines = get_global_vars()
@@ -82,7 +85,8 @@ impl Queue {
                         if dialog.text.is_empty() {
                             continue;
                         }
-                        let mut speaker = get_speaker(args.ghost_name.clone(), dialog.scope);
+                        let mut speaker =
+                            get_character_voice(args.ghost_name.clone(), dialog.scope);
                         if let Some(speakers_by_engine) = get_global_vars()
                             .volatility
                             .speakers_info
@@ -97,8 +101,26 @@ impl Queue {
                                 speaker = CharacterVoice::default();
                             }
                         }
-                        let result =
-                            predict_text(dialog.text, speaker.speaker_uuid, speaker.style_id).await;
+                        let result;
+                        match speaker.engine {
+                            ENGINE_COEIROINK => {
+                                result = coeiroink::predict::predict_text(
+                                    dialog.text,
+                                    speaker.speaker_uuid,
+                                    speaker.style_id,
+                                )
+                                .await;
+                            }
+                            ENGINE_VOICEVOX => {
+                                result =
+                                    voicevox::predict::predict_text(dialog.text, speaker.style_id)
+                                        .await;
+                            }
+                            _ => {
+                                error!("predict failed: invalid engine");
+                                continue;
+                            }
+                        }
                         if let Ok(res) = result {
                             debug!("pushing to play");
                             get_queue().push_to_play(res);

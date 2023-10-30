@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 use serde::Deserialize;
 
 use crate::engine::ENGINE_COEIROINK;
+use crate::speaker::{SpeakerInfo, Style};
 use crate::variables::get_global_vars;
 
 static mut SPEAKER_INFO_GETTER: Lazy<Thread> = Lazy::new(|| Thread::default());
@@ -70,7 +71,7 @@ pub fn get_speaker_getter() -> &'static mut Thread {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SpeakerInfo {
+pub struct SpeakerResponse {
     #[serde(rename = "speakerName")]
     pub speaker_name: String,
 
@@ -78,7 +79,7 @@ pub struct SpeakerInfo {
     pub speaker_uuid: String,
 
     #[serde(rename = "styles")]
-    pub styles: Vec<Style>,
+    pub styles: Vec<StyleResponse>,
 
     #[serde(rename = "version")]
     pub version: String,
@@ -87,8 +88,18 @@ pub struct SpeakerInfo {
     pub base64_portrait: String,
 }
 
+impl SpeakerResponse {
+    pub fn to_speaker_info(&self) -> SpeakerInfo {
+        SpeakerInfo {
+            speaker_name: self.speaker_name.clone(),
+            speaker_uuid: self.speaker_uuid.clone(),
+            styles: self.styles.iter().map(|style| style.to_style()).collect(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
-pub struct Style {
+pub struct StyleResponse {
     #[serde(rename = "styleName")]
     pub style_name: Option<String>,
 
@@ -100,6 +111,15 @@ pub struct Style {
 
     #[serde(rename = "base64Portrait")]
     pub base64_portrait: Option<String>,
+}
+
+impl StyleResponse {
+    pub fn to_style(&self) -> Style {
+        Style {
+            style_name: self.style_name.clone(),
+            style_id: self.style_id.clone(),
+        }
+    }
 }
 
 pub async fn get_speakers_info() -> Result<Vec<SpeakerInfo>, reqwest::Error> {
@@ -118,7 +138,12 @@ pub async fn get_speakers_info() -> Result<Vec<SpeakerInfo>, reqwest::Error> {
             return Err(e);
         }
     }
-    let speakers_info: Vec<SpeakerInfo> = serde_json::from_str(&body).unwrap();
+    let speakers_responses: Vec<SpeakerResponse> = serde_json::from_str(&body).unwrap();
+
+    let mut speakers_info: Vec<SpeakerInfo> = Vec::new();
+    for speaker_response in speakers_responses {
+        speakers_info.push(speaker_response.to_speaker_info());
+    }
 
     Ok(speakers_info)
 }

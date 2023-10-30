@@ -1,8 +1,6 @@
 use http::StatusCode;
 use serde::Serialize;
 
-use crate::variables::{get_global_vars, CharacterVoice, GhostVoiceInfo};
-
 #[derive(Debug, Serialize)]
 pub struct PredictRequest {
     #[serde(rename = "speakerUuid")]
@@ -31,25 +29,6 @@ pub struct ProsodyDetail {
 
     #[serde(rename = "accent")]
     pub accent: i32,
-}
-
-pub fn get_speaker(ghost_name: String, scope: usize) -> CharacterVoice {
-    let info: &GhostVoiceInfo;
-    let g = GhostVoiceInfo::default();
-    match &get_global_vars()
-        .ghosts_voices
-        .as_ref()
-        .unwrap()
-        .get(&ghost_name)
-    {
-        Some(i) => info = i,
-        None => info = &g,
-    }
-
-    match info.voices.get(scope) {
-        Some(voice) => voice.clone(),
-        None => CharacterVoice::default(), // descript.txtにないキャラの場合
-    }
 }
 
 pub async fn predict_text(
