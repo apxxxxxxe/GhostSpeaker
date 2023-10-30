@@ -72,11 +72,19 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     }
 
     let mut engine_status = String::new();
-    if speakers_info.contains_key(&ENGINE_VOICEVOX) {
-        engine_status += "VOICEVOX: \\f[color,0,128,0]起動中\\f[color,default]\\n";
-    }
-    if speakers_info.contains_key(&ENGINE_COEIROINK) {
-        engine_status += "COEIROINK: \\f[color,0,128,0]起動中\\f[color,default]\\n";
+    let engines = [
+        (ENGINE_VOICEVOX, "VOICEVOX"),
+        (ENGINE_COEIROINK, "COEIROINK"),
+    ];
+    for (engine, name) in engines.iter() {
+        if speakers_info.contains_key(engine) {
+            engine_status += &format!("{}: \\f[color,0,128,0]起動中\\f[color,default]\\n", name);
+        } else {
+            engine_status += &format!(
+                "{}: \\f[color,128,128,128]停止中\\f[color,default]\\n",
+                name
+            );
+        }
     }
     if !engine_status.is_empty() {
         engine_status += "\\n";
