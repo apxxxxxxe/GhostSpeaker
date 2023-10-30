@@ -10,7 +10,7 @@ use crate::utils::check_connection;
 
 use crate::format::split_dialog;
 use crate::player::play_wav;
-use crate::variables::{get_character_voice, get_global_vars, CharacterVoice};
+use crate::variables::{get_global_vars, CharacterVoice, DUMMY_VOICE_UUID};
 
 pub static mut QUEUE: Option<Queue> = None;
 
@@ -73,6 +73,16 @@ impl Queue {
                         continue;
                     }
 
+                    // エンジン側に声質が存在しない場合、または
+                    // descript.txtに記述されていないキャラクターのために
+                    // デフォルトの声質を用意する
+                    let first_aid_voice;
+                    if is_voicevox_connected {
+                        first_aid_voice = CharacterVoice::default_voicevox();
+                    } else {
+                        first_aid_voice = CharacterVoice::default_coeiroink();
+                    }
+
                     debug!("{}", format!("predicting: {}", args.text));
                     let devide_by_lines = get_global_vars()
                         .ghosts_voices
@@ -86,8 +96,24 @@ impl Queue {
                         if dialog.text.is_empty() {
                             continue;
                         }
-                        let mut speaker =
-                            get_character_voice(args.ghost_name.clone(), dialog.scope);
+
+                        let mut speaker = match get_global_vars()
+                            .ghosts_voices
+                            .as_ref()
+                            .unwrap()
+                            .get(&args.ghost_name)
+                            .unwrap()
+                            .voices
+                            .get(dialog.scope)
+                        {
+                            Some(speaker) => speaker.clone(),
+                            None => first_aid_voice.clone(),
+                        };
+
+                        if speaker.speaker_uuid == DUMMY_VOICE_UUID {
+                            // 無効な声質ならスキップ
+                            continue;
+                        }
                         if let Some(speakers_by_engine) = get_global_vars()
                             .volatility
                             .speakers_info
@@ -98,12 +124,7 @@ impl Queue {
                                 .find(|s| s.speaker_uuid == speaker.speaker_uuid)
                                 .is_none()
                             {
-                                // TODO: エンジン起動状況によって変える
-                                if is_voicevox_connected {
-                                    speaker = CharacterVoice::default_voicevox();
-                                } else {
-                                    speaker = CharacterVoice::default_coeiroink();
-                                }
+                                speaker = first_aid_voice.clone();
                             }
                         }
                         let result;

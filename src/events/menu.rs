@@ -2,7 +2,7 @@ use crate::engine::{engine_name, ENGINE_COEIROINK, ENGINE_VOICEVOX};
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
-use crate::variables::{get_global_vars, CharacterVoice, GhostVoiceInfo};
+use crate::variables::{get_global_vars, CharacterVoice, DUMMY_VOICE_UUID};
 
 use shiorust::message::Request;
 
@@ -38,26 +38,30 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
                 switch, ghost_name, path_for_arg
             );
             if let Some(c) = si.voices.get(index) {
-                if let Some(speakers_by_engine) = speakers_info.get(&c.engine) {
-                    if let Some(speaker) = speakers_by_engine
-                        .iter()
-                        .find(|s| s.speaker_uuid == c.speaker_uuid)
-                    {
-                        if let Some(style) = speaker
-                            .styles
-                            .iter()
-                            .find(|s| s.style_id.unwrap() == c.style_id)
-                        {
-                            voice = format!(
-                                "{} - {}",
-                                speaker.speaker_name,
-                                style.style_name.clone().unwrap(),
-                            );
-                        }
-                    }
+                if c.speaker_uuid == DUMMY_VOICE_UUID {
+                    voice = "【無し】".to_string();
                 } else {
-                    color = "\\f[color,128,128,128]";
-                    voice = format!("【使用不可: {}の起動が必要】", engine_name(c.engine));
+                    if let Some(speakers_by_engine) = speakers_info.get(&c.engine) {
+                        if let Some(speaker) = speakers_by_engine
+                            .iter()
+                            .find(|s| s.speaker_uuid == c.speaker_uuid)
+                        {
+                            if let Some(style) = speaker
+                                .styles
+                                .iter()
+                                .find(|s| s.style_id.unwrap() == c.style_id)
+                            {
+                                voice = format!(
+                                    "{} - {}",
+                                    speaker.speaker_name,
+                                    style.style_name.clone().unwrap(),
+                                );
+                            }
+                        }
+                    } else {
+                        color = "\\f[color,128,128,128]";
+                        voice = format!("【使用不可: {}の起動が必要】", engine_name(c.engine));
+                    }
                 }
             }
         };
@@ -199,21 +203,11 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
         .get_mut(*ghost_name)
     {
         let voices = &mut info.voices;
-        if voices.len() - 1 < character_index {
-            voices.resize(character_index + 1, CharacterVoice::default_voicevox());
-        }
         voices.remove(character_index);
         voices.insert(character_index, voice)
     } else {
-        let mut g = GhostVoiceInfo::default();
-        g.voices
-            .resize(character_index, CharacterVoice::default_voicevox());
-        g.voices.insert(character_index, voice);
-        get_global_vars()
-            .ghosts_voices
-            .as_mut()
-            .unwrap()
-            .insert(ghost_name.to_string(), g);
+        // OnGhostBootで設定されているはず
+        panic!("Ghost {} not found", ghost_name);
     }
     let script = format!(
         "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",

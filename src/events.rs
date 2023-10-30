@@ -1,10 +1,11 @@
+mod bootend;
 mod common;
 mod menu;
-mod periodic;
+mod other_ghost;
 
 use crate::events::common::*;
 use crate::events::menu::*;
-use crate::events::periodic::*;
+use crate::events::other_ghost::*;
 use crate::plugin::response::PluginResponse;
 
 use shiorust::message::{parts::*, traits::*, Request};
