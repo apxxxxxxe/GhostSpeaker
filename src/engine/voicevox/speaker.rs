@@ -33,14 +33,13 @@ impl Thread {
                 match get_speakers_info().await {
                     Ok(speakers_info) => {
                         sinfo.insert(ENGINE_VOICEVOX, speakers_info);
-                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     }
                     Err(e) => {
                         error!("Error: {}", e);
                         sinfo.remove(&ENGINE_VOICEVOX);
-                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                     }
                 }
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }));
     }
