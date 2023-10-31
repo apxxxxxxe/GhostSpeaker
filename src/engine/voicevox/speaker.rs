@@ -49,12 +49,6 @@ impl Thread {
     }
 
     pub fn stop(&mut self) {
-        futures::executor::block_on(async {
-            if let Some(handler) = self.handler.take() {
-                handler.abort();
-                debug!("{}", "abort speaker's handler");
-            }
-        });
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();
             debug!("{}", "shutdown speaker's runtime");

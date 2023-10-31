@@ -22,7 +22,6 @@ pub struct Queue {
     play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
     play_notifier: Arc<Notify>,
     play_handler: Option<tokio::task::JoinHandle<()>>,
-    stopper: Arc<Mutex<bool>>,
 }
 
 pub struct PredictArgs {
@@ -40,21 +39,14 @@ impl Queue {
             play_queue: Arc::new(Mutex::new(VecDeque::new())),
             play_notifier: Arc::new(Notify::new()),
             play_handler: None,
-            stopper: Arc::new(Mutex::new(false)),
         }
     }
 
     pub fn init(&mut self) {
         let predict_queue_cln = Arc::clone(&self.predict_queue);
         let predict_notifier_cln = Arc::clone(&self.predict_notifier);
-        let predict_stopper_cln = Arc::clone(&self.stopper);
         self.predict_handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
             loop {
-                if *predict_stopper_cln.lock().await {
-                    debug!("predict handler break");
-                    break;
-                }
-
                 if predict_queue_cln.lock().await.is_empty() {
                     predict_notifier_cln.notified().await;
                     continue;
@@ -164,14 +156,8 @@ impl Queue {
 
         let play_queue_cln = self.play_queue.clone();
         let play_notifier_cln = self.play_notifier.clone();
-        let play_stopper_cln = self.stopper.clone();
         self.play_handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
             loop {
-                if *play_stopper_cln.lock().await {
-                    debug!("play handler break");
-                    break;
-                }
-
                 if play_queue_cln.lock().await.is_empty() {
                     play_notifier_cln.notified().await;
                     continue;
@@ -196,27 +182,12 @@ impl Queue {
 
     pub fn stop(&mut self) {
         debug!("{}", "stopping queue");
-        futures::executor::block_on(async {
-            *self.stopper.lock().await = true;
-            free_player();
-            self.predict_notifier.notify_one();
-            self.play_notifier.notify_one();
-            let (predict_result, play_result) = futures::join!(
-                self.predict_handler.take().unwrap(),
-                self.play_handler.take().unwrap()
-            );
-            if let Err(e) = predict_result {
-                error!("error while stopping predict queue: {}", e);
-            }
-            if let Err(e) = play_result {
-                error!("error while stopping play queue: {}", e);
-            }
-        });
-        debug!("{}", "stopped queue");
+        free_player();
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();
             debug!("{}", "shutdown speaker's runtime");
         }
+        debug!("{}", "stopped queue");
     }
 
     pub fn push_to_prediction(&self, args: PredictArgs) {
