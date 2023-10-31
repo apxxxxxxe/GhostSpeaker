@@ -7,6 +7,7 @@ use crate::variables::{get_global_vars, CharacterVoice, DUMMY_VOICE_UUID};
 use shiorust::message::Request;
 
 const DEFAULT_VOICE: &str = "【不明】";
+const NO_VOICE: &str = "無し";
 
 pub fn on_menu_exec(req: &Request) -> PluginResponse {
     let mut characters_info = String::new();
@@ -39,7 +40,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
             );
             if let Some(c) = si.voices.get(index) {
                 if c.speaker_uuid == DUMMY_VOICE_UUID {
-                    voice = "【無し】".to_string();
+                    voice = NO_VOICE.to_string();
                 } else {
                     if let Some(speakers_by_engine) = speakers_info.get(&c.engine) {
                         if let Some(speaker) = speakers_by_engine
@@ -159,6 +160,17 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
     let speakers_info = &mut get_global_vars().volatility.speakers_info;
 
     let mut m = format!("\\C\\c\\b[2]\\_q{}\\n{}\\n", ghost_name, character_name);
+    let def = CharacterVoice::default();
+    m.push_str(&format!(
+        "\\![*]\\q[{},OnVoiceSelected,{},{},{},{},{},{}]\\n",
+        NO_VOICE,
+        ghost_name,
+        character_index,
+        def.engine,
+        def.speaker_uuid,
+        def.style_id,
+        ghost_path,
+    ));
     for (engine, speakers) in speakers_info.iter() {
         for speaker in speakers.iter() {
             for style in speaker.styles.iter() {
