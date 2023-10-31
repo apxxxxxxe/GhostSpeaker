@@ -1,5 +1,3 @@
-use async_std::sync::Arc;
-
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 
@@ -11,7 +9,6 @@ static mut SPEAKER_INFO_GETTER: Lazy<Thread> = Lazy::new(|| Thread::default());
 
 pub struct Thread {
     pub runtime: Option<tokio::runtime::Runtime>,
-    pub need_update: Arc<tokio::sync::Notify>,
     pub handler: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -19,7 +16,6 @@ impl Default for Thread {
     fn default() -> Self {
         Thread {
             runtime: Some(tokio::runtime::Runtime::new().unwrap()),
-            need_update: Arc::new(tokio::sync::Notify::new()),
             handler: None,
         }
     }
@@ -42,10 +38,6 @@ impl Thread {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }));
-    }
-
-    pub fn need_update(&self) {
-        self.need_update.notify_one();
     }
 
     pub fn stop(&mut self) {
