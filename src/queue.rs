@@ -2,9 +2,7 @@ use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::{Mutex, Notify};
 
-use crate::engine::coeiroink;
-use crate::engine::voicevox;
-use crate::engine::{ENGINE_COEIROINK, ENGINE_VOICEVOX};
+use crate::engine::{Predict, Predictor, ENGINE_COEIROINK, ENGINE_VOICEVOX};
 use crate::player::free_player;
 use crate::utils::check_connection;
 
@@ -84,6 +82,7 @@ impl Queue {
                         .unwrap()
                         .devide_by_lines;
                     let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
+                    let mut predictors = VecDeque::new();
                     for dialog in split_dialog(args.text, devide_by_lines, speak_by_punctuation) {
                         if dialog.text.is_empty() {
                             continue;
@@ -119,31 +118,35 @@ impl Queue {
                                 speaker = first_aid_voice.clone();
                             }
                         }
-                        let result;
                         match speaker.engine {
                             ENGINE_COEIROINK => {
-                                result = coeiroink::predict::predict_text(
+                                predictors.push_back(Predictor::CoeiroinkPredictor(
                                     dialog.text,
                                     speaker.speaker_uuid,
                                     speaker.style_id,
-                                )
-                                .await;
+                                ));
                             }
                             ENGINE_VOICEVOX => {
-                                result =
-                                    voicevox::predict::predict_text(dialog.text, speaker.style_id)
-                                        .await;
+                                predictors.push_back(Predictor::VoiceVoxPredictor(
+                                    dialog.text,
+                                    speaker.style_id,
+                                ));
                             }
                             _ => {
                                 error!("predict failed: invalid engine");
                                 continue;
                             }
                         }
-                        if let Ok(res) = result {
-                            debug!("pushing to play");
-                            get_queue().push_to_play(res);
-                        } else {
-                            debug!("predict failed: {}", result.err().unwrap());
+                    }
+                    for predictor in predictors {
+                        match predictor.predict().await {
+                            Ok(res) => {
+                                debug!("pushing to play");
+                                get_queue().push_to_play(res);
+                            }
+                            Err(e) => {
+                                debug!("predict failed: {}", e);
+                            }
                         }
                     }
                 }

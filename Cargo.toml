@@ -27,6 +27,7 @@ futures = "0.3.28"
 tokio-condvar = "0.1.0"
 serde_yaml = "0.9.27"
 serde_json = "1.0.108"
+async-trait = "0.1.74"
 
 [target.'cfg(windows)'.dependencies]
 winapi = {version = "0.3.9", features = ["winbase", "libloaderapi", "stringapiset"]}
