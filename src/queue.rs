@@ -55,105 +55,26 @@ impl Queue {
                     let mut guard = predict_queue_cln.lock().await;
                     parg = guard.pop_front();
                 }
-                if let Some(args) = parg {
-                    let is_coeiroink_connected = check_connection(ENGINE_COEIROINK).await;
-                    let is_voicevox_connected = check_connection(ENGINE_VOICEVOX).await;
-                    if !is_coeiroink_connected && !is_voicevox_connected {
-                        debug!("no engine connected: skip: {}", args.text);
-                        continue;
-                    }
 
-                    // エンジン側に声質が存在しない場合、または
-                    // descript.txtに記述されていないキャラクターのために
-                    // デフォルトの声質を用意する
-                    let first_aid_voice;
-                    if is_voicevox_connected {
-                        first_aid_voice = CharacterVoice::default_voicevox();
-                    } else {
-                        first_aid_voice = CharacterVoice::default_coeiroink();
-                    }
-
-                    debug!("{}", format!("predicting: {}", args.text));
-                    let devide_by_lines = get_global_vars()
-                        .ghosts_voices
-                        .as_ref()
-                        .unwrap()
-                        .get(&args.ghost_name)
-                        .unwrap()
-                        .devide_by_lines;
-                    let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
-                    let mut predictors = VecDeque::new();
-                    for dialog in split_dialog(args.text, devide_by_lines, speak_by_punctuation) {
-                        if dialog.text.is_empty() {
-                            continue;
-                        }
-
-                        let mut speaker = match get_global_vars()
-                            .ghosts_voices
-                            .as_ref()
-                            .unwrap()
-                            .get(&args.ghost_name)
-                            .unwrap()
-                            .voices
-                            .get(dialog.scope)
-                        {
-                            Some(speaker) => speaker.clone(),
-                            None => first_aid_voice.clone(),
-                        };
-
-                        if speaker.speaker_uuid == DUMMY_VOICE_UUID {
-                            // 無効な声質ならスキップ
-                            continue;
-                        }
-                        if let Some(speakers_by_engine) = get_global_vars()
-                            .volatility
-                            .speakers_info
-                            .get(&speaker.engine)
-                        {
-                            if speakers_by_engine
-                                .iter()
-                                .find(|s| s.speaker_uuid == speaker.speaker_uuid)
-                                .is_none()
-                            {
-                                speaker = first_aid_voice.clone();
+                match parg {
+                    None => continue,
+                    Some(parg) => match args_to_predictors(parg).await {
+                        None => continue,
+                        Some(predictors) => {
+                            for predictor in predictors {
+                                match predictor.predict().await {
+                                    Ok(res) => {
+                                        debug!("pushing to play");
+                                        get_queue().push_to_play(res);
+                                    }
+                                    Err(e) => {
+                                        debug!("predict failed: {}", e);
+                                    }
+                                }
                             }
                         }
-                        match speaker.engine {
-                            ENGINE_COEIROINK => {
-                                predictors.push_back(Predictor::CoeiroinkPredictor(
-                                    dialog.text,
-                                    speaker.speaker_uuid,
-                                    speaker.style_id,
-                                ));
-                            }
-                            ENGINE_VOICEVOX => {
-                                predictors.push_back(Predictor::VoiceVoxPredictor(
-                                    dialog.text,
-                                    speaker.style_id,
-                                ));
-                            }
-                            _ => {
-                                error!("predict failed: invalid engine");
-                                continue;
-                            }
-                        }
-                    }
-                    for predictor in predictors {
-                        match predictor.predict().await {
-                            Ok(res) => {
-                                debug!("pushing to play");
-                                get_queue().push_to_play(res);
-                            }
-                            Err(e) => {
-                                debug!("predict failed: {}", e);
-                            }
-                        }
-                    }
+                    },
                 }
-                debug!(
-                    "remaining predict queue: {}",
-                    predict_queue_cln.lock().await.len()
-                );
             }
         }));
 
@@ -175,10 +96,6 @@ impl Queue {
                     debug!("{}", format!("play: {}", data.len()));
                     play_wav(data);
                 }
-                debug!(
-                    "remaining play queue: {}",
-                    play_queue_cln.lock().await.len()
-                );
             }
         }));
     }
@@ -210,6 +127,90 @@ impl Queue {
         self.play_notifier.notify_one();
         debug!("pushed and notified to play");
     }
+}
+
+async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
+    let mut predictors = VecDeque::new();
+    let is_coeiroink_connected = check_connection(ENGINE_COEIROINK).await;
+    let is_voicevox_connected = check_connection(ENGINE_VOICEVOX).await;
+    if !is_coeiroink_connected && !is_voicevox_connected {
+        debug!("no engine connected: skip: {}", args.text);
+        return None;
+    }
+
+    // エンジン側に声質が存在しない場合、または
+    // descript.txtに記述されていないキャラクターのために
+    // デフォルトの声質を用意する
+    let first_aid_voice;
+    if is_voicevox_connected {
+        first_aid_voice = CharacterVoice::default_voicevox();
+    } else {
+        first_aid_voice = CharacterVoice::default_coeiroink();
+    }
+
+    debug!("{}", format!("predicting: {}", args.text));
+    let devide_by_lines = get_global_vars()
+        .ghosts_voices
+        .as_ref()
+        .unwrap()
+        .get(&args.ghost_name)
+        .unwrap()
+        .devide_by_lines;
+    let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
+
+    for dialog in split_dialog(args.text, devide_by_lines, speak_by_punctuation) {
+        if dialog.text.is_empty() {
+            continue;
+        }
+
+        let mut speaker = match get_global_vars()
+            .ghosts_voices
+            .as_ref()
+            .unwrap()
+            .get(&args.ghost_name)
+            .unwrap()
+            .voices
+            .get(dialog.scope)
+        {
+            Some(speaker) => speaker.clone(),
+            None => first_aid_voice.clone(),
+        };
+
+        if speaker.speaker_uuid == DUMMY_VOICE_UUID {
+            // 無効な声質ならスキップ
+            continue;
+        }
+        if let Some(speakers_by_engine) = get_global_vars()
+            .volatility
+            .speakers_info
+            .get(&speaker.engine)
+        {
+            if speakers_by_engine
+                .iter()
+                .find(|s| s.speaker_uuid == speaker.speaker_uuid)
+                .is_none()
+            {
+                speaker = first_aid_voice.clone();
+            }
+        }
+        match speaker.engine {
+            ENGINE_COEIROINK => {
+                predictors.push_back(Predictor::CoeiroinkPredictor(
+                    dialog.text,
+                    speaker.speaker_uuid,
+                    speaker.style_id,
+                ));
+            }
+            ENGINE_VOICEVOX => {
+                predictors.push_back(Predictor::VoiceVoxPredictor(dialog.text, speaker.style_id));
+            }
+            _ => {
+                error!("predict failed: invalid engine");
+                continue;
+            }
+        }
+    }
+    Some(predictors)
 }
 
 // for singleton
