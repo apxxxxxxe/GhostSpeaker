@@ -26,6 +26,13 @@ impl Player {
       sink,
     }
   }
+
+  fn reset_device(&mut self) {
+    let (stream, stream_handle) = OutputStream::try_default().unwrap();
+    self._stream = stream;
+    self._stream_handle = stream_handle;
+    self.sink = Sink::try_new(&self._stream_handle).unwrap();
+  }
 }
 
 pub fn free_player() {
@@ -48,16 +55,17 @@ pub fn get_player() -> &'static mut Player {
 }
 
 pub fn play_wav(wav: Vec<u8>) {
-  // Get a output stream handle to the default physical sound device
   let player = get_player();
-  let sink = &mut player.sink;
-  sink.set_volume(get_global_vars().volume.unwrap_or(1.0));
+  if player.sink.empty() {
+    // 再生する前に、一度デバイスをリセットする
+    // 再生デバイスが変更されていた場合に対応するため
+    player.reset_device();
+  }
+  player.sink.set_volume(get_global_vars().volume.unwrap_or(1.0));
   let file = BufReader::new(Cursor::new(wav));
-  // Decode that sound file into a source
   match Decoder::new(file) {
     Ok(source) => {
-      // Add the source to the sink
-      sink.append(source);
+      player.sink.append(source);
     }
     Err(e) => {
       error!("Error: {}", e);
