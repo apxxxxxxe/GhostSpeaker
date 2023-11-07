@@ -1,56 +1,6 @@
-use once_cell::sync::Lazy;
 use serde::Deserialize;
 
-use crate::engine::ENGINE_COEIROINK;
 use crate::speaker::{SpeakerInfo, Style};
-use crate::variables::get_global_vars;
-
-static mut SPEAKER_INFO_GETTER: Lazy<Thread> = Lazy::new(|| Thread::default());
-
-pub struct Thread {
-  pub runtime: Option<tokio::runtime::Runtime>,
-  pub handler: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl Default for Thread {
-  fn default() -> Self {
-    Thread {
-      runtime: Some(tokio::runtime::Runtime::new().unwrap()),
-      handler: None,
-    }
-  }
-}
-
-impl Thread {
-  pub fn start(&mut self) {
-    self.handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
-      loop {
-        let sinfo = &mut get_global_vars().volatility.speakers_info;
-        match get_speakers_info().await {
-          Ok(speakers_info) => {
-            sinfo.insert(ENGINE_COEIROINK, speakers_info);
-          }
-          Err(e) => {
-            error!("Error: {}", e);
-            sinfo.remove(&ENGINE_COEIROINK);
-          }
-        }
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-      }
-    }));
-  }
-
-  pub fn stop(&mut self) {
-    if let Some(runtime) = self.runtime.take() {
-      runtime.shutdown_background();
-      debug!("{}", "shutdown speaker's runtime");
-    }
-  }
-}
-
-pub fn get_speaker_getter() -> &'static mut Thread {
-  unsafe { &mut SPEAKER_INFO_GETTER }
-}
 
 #[derive(Debug, Deserialize)]
 pub struct SpeakerResponse {

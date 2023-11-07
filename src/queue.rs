@@ -2,12 +2,13 @@ use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::{Mutex, Notify};
 
+use crate::engine::coeiroink;
+use crate::engine::voicevox;
 use crate::engine::{Predict, Predictor, ENGINE_COEIROINK, ENGINE_VOICEVOX};
-use crate::player::free_player;
-use crate::utils::check_connection;
-
 use crate::format::split_dialog;
+use crate::player::free_player;
 use crate::player::play_wav;
+use crate::utils::check_connection;
 use crate::variables::{get_global_vars, CharacterVoice, DUMMY_VOICE_UUID};
 
 pub static mut QUEUE: Option<Queue> = None;
@@ -16,10 +17,8 @@ pub struct Queue {
   runtime: Option<tokio::runtime::Runtime>,
   predict_queue: Arc<Mutex<VecDeque<PredictArgs>>>,
   predict_notifier: Arc<Notify>,
-  predict_handler: Option<tokio::task::JoinHandle<()>>,
   play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
   play_notifier: Arc<Notify>,
-  play_handler: Option<tokio::task::JoinHandle<()>>,
 }
 
 pub struct PredictArgs {
@@ -33,17 +32,47 @@ impl Queue {
       runtime: Some(tokio::runtime::Runtime::new().unwrap()),
       predict_queue: Arc::new(Mutex::new(VecDeque::new())),
       predict_notifier: Arc::new(Notify::new()),
-      predict_handler: None,
       play_queue: Arc::new(Mutex::new(VecDeque::new())),
       play_notifier: Arc::new(Notify::new()),
-      play_handler: None,
     }
   }
 
   pub fn init(&mut self) {
+    self.runtime.as_mut().unwrap().spawn(async move {
+      loop {
+        let sinfo = &mut get_global_vars().volatility.speakers_info;
+        match voicevox::speaker::get_speakers_info().await {
+          Ok(speakers_info) => {
+            sinfo.insert(ENGINE_VOICEVOX, speakers_info);
+          }
+          Err(e) => {
+            error!("Error: {}", e);
+            sinfo.remove(&ENGINE_VOICEVOX);
+          }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+      }
+    });
+
+    self.runtime.as_mut().unwrap().spawn(async move {
+      loop {
+        let sinfo = &mut get_global_vars().volatility.speakers_info;
+        match coeiroink::speaker::get_speakers_info().await {
+          Ok(speakers_info) => {
+            sinfo.insert(ENGINE_COEIROINK, speakers_info);
+          }
+          Err(e) => {
+            error!("Error: {}", e);
+            sinfo.remove(&ENGINE_COEIROINK);
+          }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+      }
+    });
+
     let predict_queue_cln = Arc::clone(&self.predict_queue);
     let predict_notifier_cln = Arc::clone(&self.predict_notifier);
-    self.predict_handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
+    self.runtime.as_mut().unwrap().spawn(async move {
       loop {
         if predict_queue_cln.lock().await.is_empty() {
           predict_notifier_cln.notified().await;
@@ -76,11 +105,11 @@ impl Queue {
           },
         }
       }
-    }));
+    });
 
     let play_queue_cln = self.play_queue.clone();
     let play_notifier_cln = self.play_notifier.clone();
-    self.play_handler = Some(self.runtime.as_mut().unwrap().spawn(async move {
+    self.runtime.as_mut().unwrap().spawn(async move {
       loop {
         if play_queue_cln.lock().await.is_empty() {
           play_notifier_cln.notified().await;
@@ -97,7 +126,7 @@ impl Queue {
           play_wav(data);
         }
       }
-    }));
+    });
   }
 
   pub fn stop(&mut self) {

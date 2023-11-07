@@ -8,8 +8,6 @@ mod speaker;
 mod utils;
 mod variables;
 
-use crate::engine::coeiroink;
-use crate::engine::voicevox;
 use crate::plugin::request::PluginRequest;
 use crate::queue::get_queue;
 use crate::variables::get_global_vars;
@@ -54,9 +52,6 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
     debug!("{}", panic_info);
   }));
 
-  coeiroink::speaker::get_speaker_getter().start();
-  voicevox::speaker::get_speaker_getter().start();
-
   debug!("load");
 
   return TRUE;
@@ -66,8 +61,6 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 pub extern "cdecl" fn unload() -> BOOL {
   get_global_vars().save();
   get_queue().stop();
-  coeiroink::speaker::get_speaker_getter().stop();
-  voicevox::speaker::get_speaker_getter().stop();
 
   debug!("unload");
 
