@@ -59,6 +59,7 @@ fn get_event(id: &str) -> Option<fn(&Request) -> PluginResponse> {
     "OnVolumeChange" => Some(on_volume_change),
     "OnDivisionSettingChanged" => Some(on_division_setting_changed),
     "OnPunctuationSettingChanged" => Some(on_punctuation_setting_changed),
+    "OnPlayerClear" => Some(on_player_clear),
     "OnGhostBoot" => Some(on_ghost_boot),
     _ => None,
   }

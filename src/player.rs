@@ -13,7 +13,7 @@ pub struct Player {
   _stream: OutputStream,
   _stream_handle: OutputStreamHandle,
 
-  sink: Sink,
+  pub sink: Sink,
 }
 
 impl Player {
@@ -61,7 +61,9 @@ pub fn play_wav(wav: Vec<u8>) {
     // 再生デバイスが変更されていた場合に対応するため
     player.reset_device();
   }
-  player.sink.set_volume(get_global_vars().volume.unwrap_or(1.0));
+  player
+    .sink
+    .set_volume(get_global_vars().volume.unwrap_or(1.0));
   let file = BufReader::new(Cursor::new(wav));
   match Decoder::new(file) {
     Ok(source) => {

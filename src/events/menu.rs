@@ -1,6 +1,7 @@
 use crate::engine::{engine_name, ENGINE_COEIROINK, ENGINE_VOICEVOX};
 use crate::events::common::load_descript;
 use crate::events::common::*;
+use crate::player::get_player;
 use crate::plugin::response::PluginResponse;
 use crate::variables::{get_global_vars, CharacterVoice, DUMMY_VOICE_UUID};
 
@@ -130,9 +131,15 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     switch, ghost_name, path_for_arg
   );
 
+  let mut player_clearer = String::new();
+  if !get_player().sink.empty() {
+    player_clearer = format!("\\![*]\\q[再生中の音声を停止,OnPlayerClear,{},{}]\\n\\n", ghost_name, path_for_arg);
+  }
+
   let m = format!(
     "\
     \\b[2]\\_q\
+    {}\
     {}\
     {}\\n\
     {}\\n\
@@ -142,6 +149,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     \\n\\q[×,]\
     ",
     engine_status,
+    player_clearer,
     ghost_name,
     characters_info,
     volume_changer,
@@ -267,6 +275,21 @@ pub fn on_punctuation_setting_changed(req: &Request) -> PluginResponse {
   if let Some(s) = get_global_vars().speak_by_punctuation {
     get_global_vars().speak_by_punctuation = Some(!s);
   }
+
+  let script = format!(
+    "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+    get_global_vars().volatility.plugin_uuid,
+    ghost_name,
+    path_for_arg
+  );
+  new_response_with_script(script, false)
+}
+
+pub fn on_player_clear(req: &Request) -> PluginResponse {
+  let refs = get_references(req);
+  let ghost_name = refs[0].to_string();
+  let path_for_arg = refs[1].to_string();
+  get_player().sink.clear();
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
