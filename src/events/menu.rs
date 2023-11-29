@@ -3,6 +3,7 @@ use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::player::get_player;
 use crate::plugin::response::PluginResponse;
+use crate::queue::get_queue;
 use crate::variables::{get_global_vars, CharacterVoice, DUMMY_VOICE_UUID};
 
 use shiorust::message::Request;
@@ -86,7 +87,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
   let mut engine_status = String::new();
   let engines = [
     (ENGINE_VOICEVOX, "VOICEVOX"),
-    (ENGINE_COEIROINK, "COEIROINK"),
+    (ENGINE_COEIROINK, "COEIROINKv2"),
   ];
   for (engine, name) in engines.iter() {
     if speakers_info.contains_key(engine) {
@@ -133,7 +134,10 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
 
   let mut player_clearer = String::new();
   if !get_player().sink.empty() {
-    player_clearer = format!("\\![*]\\q[再生中の音声を停止,OnPlayerClear,{},{}]\\n\\n", ghost_name, path_for_arg);
+    player_clearer = format!(
+      "\\![*]\\q[再生中の音声を停止,OnPlayerClear,{},{}]\\n\\n",
+      ghost_name, path_for_arg
+    );
   }
 
   let m = format!(
@@ -289,6 +293,7 @@ pub fn on_player_clear(req: &Request) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
+  get_queue().restart();
   get_player().sink.clear();
 
   let script = format!(

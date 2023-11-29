@@ -139,6 +139,16 @@ impl Queue {
     debug!("{}", "stopped queue");
   }
 
+  // remove all queue and stop running threads
+  pub fn restart(&mut self) {
+    debug!("{}", "restarting queue");
+    self.predict_queue = Arc::new(Mutex::new(VecDeque::new()));
+    self.play_queue = Arc::new(Mutex::new(VecDeque::new()));
+    self.runtime = Some(tokio::runtime::Runtime::new().unwrap());
+    self.init();
+    debug!("{}", "restarted queue");
+  }
+
   pub fn push_to_prediction(&self, args: PredictArgs) {
     debug!("pushing to prediction");
     futures::executor::block_on(async {
