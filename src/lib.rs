@@ -39,6 +39,7 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 
   get_global_vars().volatility.dll_dir = s.to_string();
   get_global_vars().load();
+  get_queue(); // init
 
   let log_path = Path::new(&get_global_vars().volatility.dll_dir).join("ghost-speaker.log");
   WriteLogger::init(

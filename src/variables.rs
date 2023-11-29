@@ -177,6 +177,10 @@ pub struct VolatilityVariables {
   pub dll_dir: String,
 
   pub speakers_info: HashMap<Engine, Vec<SpeakerInfo>>,
+
+  pub current_connection_status: HashMap<Engine, bool>,
+
+  pub last_connection_status: HashMap<Engine, bool>,
 }
 
 impl Default for VolatilityVariables {
@@ -185,6 +189,8 @@ impl Default for VolatilityVariables {
       plugin_uuid: "1e1e0813-f16f-409e-b870-2c36b9084732".to_string(),
       dll_dir: "".to_string(),
       speakers_info: HashMap::new(),
+      current_connection_status: HashMap::new(),
+      last_connection_status: HashMap::new(),
     }
   }
 }

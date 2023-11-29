@@ -41,12 +41,15 @@ impl Queue {
     self.runtime.as_mut().unwrap().spawn(async move {
       loop {
         let sinfo = &mut get_global_vars().volatility.speakers_info;
+        let connection_status = &mut get_global_vars().volatility.current_connection_status;
         match voicevox::speaker::get_speakers_info().await {
           Ok(speakers_info) => {
+            connection_status.insert(ENGINE_VOICEVOX, true);
             sinfo.insert(ENGINE_VOICEVOX, speakers_info);
           }
           Err(e) => {
             error!("Error: {}", e);
+            connection_status.insert(ENGINE_VOICEVOX, false);
             sinfo.remove(&ENGINE_VOICEVOX);
           }
         }
@@ -57,12 +60,15 @@ impl Queue {
     self.runtime.as_mut().unwrap().spawn(async move {
       loop {
         let sinfo = &mut get_global_vars().volatility.speakers_info;
+        let connection_status = &mut get_global_vars().volatility.current_connection_status;
         match coeiroink::speaker::get_speakers_info().await {
           Ok(speakers_info) => {
+            connection_status.insert(ENGINE_COEIROINK, true);
             sinfo.insert(ENGINE_COEIROINK, speakers_info);
           }
           Err(e) => {
             error!("Error: {}", e);
+            connection_status.insert(ENGINE_COEIROINK, false);
             sinfo.remove(&ENGINE_COEIROINK);
           }
         }
