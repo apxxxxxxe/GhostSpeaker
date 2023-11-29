@@ -1,17 +1,20 @@
 # 伺かプラグイン「GhostSpeaker」
 
+https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/ea0452ff-d3e7-45e2-8523-0972a9e8aa87
+
 - SSPで動作確認
 
 ## 何をするもの？
 音声合成エンジンを利用して、ゴーストの台詞を読み上げることができるプラグインです。  
 現在対応している音声合成エンジンは、
 
+- VOICEVOX
 - COEIROINK(version2.0.0以降)
 
 です。
 
 ## どうやって使うの？
-プラグインをインストール後、対応する音声合成エンジンを起動してください。例えば、COEIROINKの場合は、`COEIROINKv2.exe`もしくは`engine/engine.exe`を起動します。
+プラグインをインストール後、対応する音声合成エンジンを起動してください。例えば、COEIROINKの場合は`COEIROINKv2.exe`もしくは`engine/engine.exe`を起動します。
 エンジンの準備が完了し次第、ゴーストの台詞が読み上げられるようになります。
 
 ## インストール方法
