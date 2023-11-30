@@ -25,7 +25,7 @@ pub fn on_second_change(_req: &Request) -> PluginResponse {
   vars.volatility.last_connection_status = current.clone();
 
   if !lines.is_empty() {
-    new_response_with_script(
+    new_response_with_nobreak(
       format!(
         "\\C\\![set,trayballoon,--text={},--title=GhostSpeaker,--icon=info,--timeout=3]",
         lines.join(" / ")

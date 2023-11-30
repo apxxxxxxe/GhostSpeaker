@@ -36,6 +36,14 @@ pub fn new_response_with_script(script: String, _use_translate: bool) -> PluginR
   r
 }
 
+pub fn new_response_with_nobreak(script: String, use_translate: bool) -> PluginResponse {
+  let mut r = new_response_with_script(script, use_translate);
+  r.response
+    .headers
+    .insert(HeaderName::from("ScriptOption"), "nobreak".to_string());
+  r
+}
+
 pub fn get_references(req: &Request) -> Vec<&str> {
   let mut references: Vec<&str> = Vec::new();
   let mut i = 0;
