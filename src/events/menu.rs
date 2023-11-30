@@ -132,11 +132,17 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
     switch, ghost_name, path_for_arg
   );
 
-  let mut player_clearer = String::new();
-  if !get_player().sink.empty() {
+  let player_clearer: String;
+  let player_button_dialog = "再生中の音声を停止";
+  if get_player().sink.empty() {
     player_clearer = format!(
-      "\\![*]\\q[再生中の音声を停止,OnPlayerClear,{},{}]\\n\\n",
-      ghost_name, path_for_arg
+      "\\![*]\\f[strike,true]{}\\f[strike,default]\\n\\n",
+      player_button_dialog
+    )
+  } else {
+    player_clearer = format!(
+      "\\![*]\\q[{},OnPlayerClear,{},{}]\\n\\n",
+      player_button_dialog, ghost_name, path_for_arg
     );
   }
 
