@@ -24,14 +24,28 @@ pub fn on_second_change(_req: &Request) -> PluginResponse {
 
   vars.volatility.last_connection_status = current.clone();
 
+  let update: String;
+  if !vars.volatility.is_update_checked {
+    update = format!(
+      "\\C\\![updateother,--plugin={}]",
+      vars.volatility.plugin_name
+    );
+    vars.volatility.is_update_checked = true;
+  } else {
+    update = String::new();
+  }
+
   if !lines.is_empty() {
     new_response_with_nobreak(
       format!(
-        "\\C\\![set,trayballoon,--text={},--title=GhostSpeaker,--icon=info,--timeout=3]",
-        lines.join(" / ")
+        "\\C\\![set,trayballoon,--text={},--title=GhostSpeaker,--icon=info,--timeout=3]{}",
+        lines.join(" / "),
+        update
       ),
       false,
     )
+  } else if !update.is_empty() {
+    new_response_with_script(update, false)
   } else {
     new_response_nocontent()
   }

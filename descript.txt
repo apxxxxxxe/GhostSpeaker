@@ -27,6 +27,6 @@ otherghosttalk,before
 id,1e1e0813-f16f-409e-b870-2c36b9084732
 
 //更新URL
-//homeurl,https://raw.githubusercontent.com/apxxxxxxe/GhostSpeaker/main/
+homeurl,https://raw.githubusercontent.com/apxxxxxxe/GhostSpeaker/main/
 
 readme.charset,UTF-8

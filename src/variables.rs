@@ -171,10 +171,14 @@ impl Default for CharacterVoice {
 
 // ゴーストのグローバル変数のうち、揮発性(起動毎にリセットされる)のもの
 pub struct VolatilityVariables {
+  pub plugin_name: String,
+
   pub plugin_uuid: String,
 
   // プラグインのディレクトリ
   pub dll_dir: String,
+
+  pub is_update_checked: bool,
 
   pub speakers_info: HashMap<Engine, Vec<SpeakerInfo>>,
 
@@ -186,8 +190,10 @@ pub struct VolatilityVariables {
 impl Default for VolatilityVariables {
   fn default() -> Self {
     Self {
+      plugin_name: "GhostSpeaker".to_string(),
       plugin_uuid: "1e1e0813-f16f-409e-b870-2c36b9084732".to_string(),
       dll_dir: "".to_string(),
+      is_update_checked: false,
       speakers_info: HashMap::new(),
       current_connection_status: HashMap::new(),
       last_connection_status: HashMap::new(),
