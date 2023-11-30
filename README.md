@@ -1,6 +1,8 @@
 # 伺かプラグイン「GhostSpeaker」
 
-https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/ea0452ff-d3e7-45e2-8523-0972a9e8aa87
+https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/5e13bf62-1c07-45c9-a5f8-d3ed043b24b0
+
+デモ動画（音声がミュートになっていないことを確認してください）
 
 - SSPで動作確認
 
