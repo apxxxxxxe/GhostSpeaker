@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::engine::{Engine, ENGINE_COEIROINK, ENGINE_VOICEVOX};
+use crate::engine::{Engine, CharacterVoice};
 use crate::speaker::SpeakerInfo;
 
-pub const DUMMY_VOICE_UUID: &str = "dummy";
 const VAR_PATH: &str = "vars.yaml";
 static mut GLOBALVARS: Option<GlobalVariables> = None;
 
@@ -129,42 +128,6 @@ impl GhostVoiceInfo {
     GhostVoiceInfo {
       devide_by_lines: false,
       voices: v,
-    }
-  }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct CharacterVoice {
-  pub engine: Engine,
-  pub speaker_uuid: String,
-  pub style_id: i32,
-}
-
-impl CharacterVoice {
-  pub fn default_coeiroink() -> Self {
-    // つくよみちゃん-れいせい
-    CharacterVoice {
-      engine: ENGINE_COEIROINK,
-      speaker_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
-      style_id: 0,
-    }
-  }
-  pub fn default_voicevox() -> Self {
-    // ずんだもん-ノーマル
-    CharacterVoice {
-      engine: ENGINE_VOICEVOX,
-      speaker_uuid: String::from("388f246b-8c41-4ac1-8e2d-5d79f3ff56d9"),
-      style_id: 3,
-    }
-  }
-}
-
-impl Default for CharacterVoice {
-  fn default() -> Self {
-    CharacterVoice {
-      engine: ENGINE_VOICEVOX,
-      speaker_uuid: DUMMY_VOICE_UUID.to_string(),
-      style_id: -1,
     }
   }
 }

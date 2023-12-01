@@ -1,11 +1,16 @@
+use crate::engine::Engine;
 use http::StatusCode;
 
-pub async fn predict_text(text: String, speaker: i32) -> Result<Vec<u8>, reqwest::Error> {
-  const DOMAIN: &str = "http://localhost:50021/";
+pub async fn predict_text(
+  engine: Engine,
+  text: String,
+  speaker: i32,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+  let domain: String = format!("http://localhost:{}/", engine.port);
 
   let synthesis_req: Vec<u8>;
   match reqwest::Client::new()
-    .post(&format!("{}{}", DOMAIN, "audio_query"))
+    .post(&format!("{}{}", domain, "audio_query"))
     .query(&[("speaker", speaker.to_string()), ("text", text)])
     .send()
     .await
@@ -16,18 +21,18 @@ pub async fn predict_text(text: String, speaker: i32) -> Result<Vec<u8>, reqwest
       }
       _ => {
         println!("Error: {:?}", res);
-        return Err(res.error_for_status().unwrap_err());
+        return Err(res.status().to_string().into());
       }
     },
     Err(e) => {
       println!("Error: {:?}", e);
-      return Err(e);
+      return Err(e.to_string().into());
     }
   }
 
   let wav: Vec<u8>;
   match reqwest::Client::new()
-    .post(&format!("{}{}", DOMAIN, "synthesis"))
+    .post(&format!("{}{}", domain, "synthesis"))
     .header("Content-Type", "application/json")
     .header("Accept", "audio/wav")
     .query(&[("speaker", speaker.to_string())])
@@ -41,12 +46,12 @@ pub async fn predict_text(text: String, speaker: i32) -> Result<Vec<u8>, reqwest
       }
       _ => {
         println!("Error: {:?}", res);
-        return Err(res.error_for_status().unwrap_err());
+        return Err(res.status().to_string().into());
       }
     },
     Err(e) => {
       println!("Error: {:?}", e);
-      return Err(e);
+      return Err(e.to_string().into());
     }
   }
 

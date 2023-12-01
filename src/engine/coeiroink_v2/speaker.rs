@@ -54,7 +54,7 @@ impl StyleResponse {
   }
 }
 
-pub async fn get_speakers_info() -> Result<Vec<SpeakerInfo>, reqwest::Error> {
+pub async fn get_speakers_info() -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error>> {
   const URL: &str = "http://localhost:50032/v1/speakers";
   println!("Requesting speakers info from {}", URL);
 
@@ -67,10 +67,10 @@ pub async fn get_speakers_info() -> Result<Vec<SpeakerInfo>, reqwest::Error> {
     }
     Err(e) => {
       println!("Failed to get speakers info: {}", e);
-      return Err(e);
+      return Err(Box::new(e));
     }
   }
-  let speakers_responses: Vec<SpeakerResponse> = serde_json::from_str(&body).unwrap();
+  let speakers_responses: Vec<SpeakerResponse> = serde_json::from_str(&body)?;
 
   let mut speakers_info: Vec<SpeakerInfo> = Vec::new();
   for speaker_response in speakers_responses {

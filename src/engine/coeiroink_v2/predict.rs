@@ -35,7 +35,7 @@ pub async fn predict_text(
   text: String,
   speaker_uuid: String,
   style_id: i32,
-) -> Result<Vec<u8>, reqwest::Error> {
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
   const URL: &str = "http://localhost:50032/v1/predict";
 
   let req = PredictRequest {
@@ -62,12 +62,12 @@ pub async fn predict_text(
       }
       _ => {
         println!("Error: {:?}", res);
-        return Err(res.error_for_status().unwrap_err());
+        return Err(res.error_for_status().unwrap_err().into());
       }
     },
     Err(e) => {
       println!("Error: {:?}", e);
-      return Err(e);
+      return Err(e.into());
     }
   }
 

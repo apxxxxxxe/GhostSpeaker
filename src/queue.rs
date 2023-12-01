@@ -2,14 +2,15 @@ use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::{Mutex, Notify};
 
-use crate::engine::coeiroink;
-use crate::engine::voicevox;
-use crate::engine::{Predict, Predictor, ENGINE_COEIROINK, ENGINE_VOICEVOX};
+use crate::engine::{
+  engine_from_port, get_speaker_getters, CharacterVoice, GetSpeakersInfo, Predict, Predictor,
+  DUMMY_VOICE_UUID, ENGINE_COEIROINKV2, ENGINE_VOICEVOX,
+};
 use crate::format::split_dialog;
 use crate::player::free_player;
 use crate::player::play_wav;
 use crate::utils::check_connection;
-use crate::variables::{get_global_vars, CharacterVoice, DUMMY_VOICE_UUID};
+use crate::variables::get_global_vars;
 
 pub static mut QUEUE: Option<Queue> = None;
 
@@ -38,43 +39,26 @@ impl Queue {
   }
 
   pub fn init(&mut self) {
-    self.runtime.as_mut().unwrap().spawn(async move {
-      loop {
-        let sinfo = &mut get_global_vars().volatility.speakers_info;
-        let connection_status = &mut get_global_vars().volatility.current_connection_status;
-        match voicevox::speaker::get_speakers_info().await {
-          Ok(speakers_info) => {
-            connection_status.insert(ENGINE_VOICEVOX, true);
-            sinfo.insert(ENGINE_VOICEVOX, speakers_info);
+    for (engine, getter) in get_speaker_getters() {
+      self.runtime.as_mut().unwrap().spawn(async move {
+        loop {
+          let sinfo = &mut get_global_vars().volatility.speakers_info;
+          let connection_status = &mut get_global_vars().volatility.current_connection_status;
+          match getter.get_speakers_info().await {
+            Ok(speakers_info) => {
+              connection_status.insert(engine, true);
+              sinfo.insert(engine, speakers_info);
+            }
+            Err(e) => {
+              error!("Error: {}", e);
+              connection_status.insert(engine, false);
+              sinfo.remove(&engine);
+            }
           }
-          Err(e) => {
-            error!("Error: {}", e);
-            connection_status.insert(ENGINE_VOICEVOX, false);
-            sinfo.remove(&ENGINE_VOICEVOX);
-          }
+          tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-      }
-    });
-
-    self.runtime.as_mut().unwrap().spawn(async move {
-      loop {
-        let sinfo = &mut get_global_vars().volatility.speakers_info;
-        let connection_status = &mut get_global_vars().volatility.current_connection_status;
-        match coeiroink::speaker::get_speakers_info().await {
-          Ok(speakers_info) => {
-            connection_status.insert(ENGINE_COEIROINK, true);
-            sinfo.insert(ENGINE_COEIROINK, speakers_info);
-          }
-          Err(e) => {
-            error!("Error: {}", e);
-            connection_status.insert(ENGINE_COEIROINK, false);
-            sinfo.remove(&ENGINE_COEIROINK);
-          }
-        }
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-      }
-    });
+      });
+    }
 
     let predict_queue_cln = Arc::clone(&self.predict_queue);
     let predict_notifier_cln = Arc::clone(&self.predict_notifier);
@@ -176,7 +160,7 @@ impl Queue {
 
 async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
   let mut predictors = VecDeque::new();
-  let is_coeiroink_connected = check_connection(ENGINE_COEIROINK).await;
+  let is_coeiroink_connected = check_connection(ENGINE_COEIROINKV2).await;
   let is_voicevox_connected = check_connection(ENGINE_VOICEVOX).await;
   if !is_coeiroink_connected && !is_voicevox_connected {
     debug!("no engine connected: skip: {}", args.text);
@@ -228,7 +212,7 @@ async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
     if let Some(speakers_by_engine) = get_global_vars()
       .volatility
       .speakers_info
-      .get(&speaker.engine)
+      .get(&(engine_from_port(speaker.port).unwrap()))
     {
       if speakers_by_engine
         .iter()
@@ -238,20 +222,20 @@ async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
         speaker = first_aid_voice.clone();
       }
     }
-    match speaker.engine {
-      ENGINE_COEIROINK => {
-        predictors.push_back(Predictor::CoeiroinkPredictor(
+    match engine_from_port(speaker.port).unwrap() {
+      ENGINE_COEIROINKV2 => {
+        predictors.push_back(Predictor::CoeiroinkV2Predictor(
           dialog.text,
           speaker.speaker_uuid,
           speaker.style_id,
         ));
       }
-      ENGINE_VOICEVOX => {
-        predictors.push_back(Predictor::VoiceVoxPredictor(dialog.text, speaker.style_id));
-      }
-      _ => {
-        error!("predict failed: invalid engine");
-        continue;
+      engine => {
+        predictors.push_back(Predictor::VoiceVoxFamilyPredictor(
+          engine,
+          dialog.text,
+          speaker.style_id,
+        ));
       }
     }
   }

@@ -1,10 +1,11 @@
-use crate::engine::{engine_name, ENGINE_COEIROINK, ENGINE_VOICEVOX};
+use crate::engine::{engine_from_port, ENGINE_LIST};
+use crate::engine::{CharacterVoice, DUMMY_VOICE_UUID};
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::player::get_player;
 use crate::plugin::response::PluginResponse;
 use crate::queue::get_queue;
-use crate::variables::{get_global_vars, CharacterVoice, DUMMY_VOICE_UUID};
+use crate::variables::get_global_vars;
 
 use shiorust::message::Request;
 
@@ -44,7 +45,8 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
         if c.speaker_uuid == DUMMY_VOICE_UUID {
           voice = NO_VOICE.to_string();
         } else {
-          if let Some(speakers_by_engine) = speakers_info.get(&c.engine) {
+          if let Some(speakers_by_engine) = speakers_info.get(&(engine_from_port(c.port).unwrap()))
+          {
             if let Some(speaker) = speakers_by_engine
               .iter()
               .find(|s| s.speaker_uuid == c.speaker_uuid)
@@ -63,7 +65,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
             }
           } else {
             color = "\\f[color,128,128,128]";
-            voice = format!("【使用不可: {}の起動が必要】", engine_name(c.engine));
+            voice = format!("【使用不可: {}の起動が必要】", engine_from_port(c.port).unwrap().name);
           }
         }
       }
@@ -85,17 +87,16 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
   }
 
   let mut engine_status = String::new();
-  let engines = [
-    (ENGINE_VOICEVOX, "VOICEVOX"),
-    (ENGINE_COEIROINK, "COEIROINKv2"),
-  ];
-  for (engine, name) in engines.iter() {
+  for engine in ENGINE_LIST.iter() {
     if speakers_info.contains_key(engine) {
-      engine_status += &format!("{}: \\f[color,0,128,0]起動中\\f[color,default]\\n", name);
+      engine_status += &format!(
+        "{}: \\f[color,0,128,0]起動中\\f[color,default]\\n",
+        engine.name
+      );
     } else {
       engine_status += &format!(
         "{}: \\f[color,128,128,128]停止中\\f[color,default]\\n",
-        name
+        engine.name
       );
     }
   }
@@ -182,7 +183,13 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
   let def = CharacterVoice::default();
   m.push_str(&format!(
     "\\![*]\\q[{},OnVoiceSelected,{},{},{},{},{},{}]\\n",
-    NO_VOICE, ghost_name, character_index, def.engine, def.speaker_uuid, def.style_id, ghost_path,
+    NO_VOICE,
+    ghost_name,
+    character_index,
+    def.port,
+    def.speaker_uuid,
+    def.style_id,
+    ghost_path,
   ));
   for (engine, speakers) in speakers_info.iter() {
     for speaker in speakers.iter() {
@@ -193,7 +200,7 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
           style.style_name.as_ref().unwrap(),
           ghost_name,
           character_index,
-          engine,
+          engine.port,
           speaker.speaker_uuid,
           style.style_id.unwrap(),
           ghost_path,
@@ -210,13 +217,13 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs.get(0).unwrap();
   let character_index = refs.get(1).unwrap().parse::<usize>().unwrap();
-  let engine = refs.get(2).unwrap();
+  let port = refs.get(2).unwrap();
   let speaker_uuid = refs.get(3).unwrap();
   let style_id = refs.get(4).unwrap();
   let ghost_path = refs.get(5).unwrap();
 
   let voice = CharacterVoice {
-    engine: engine.to_string().parse::<i32>().unwrap(),
+    port: port.to_string().parse::<i32>().unwrap(),
     speaker_uuid: speaker_uuid.to_string(),
     style_id: style_id.to_string().parse::<i32>().unwrap(),
   };

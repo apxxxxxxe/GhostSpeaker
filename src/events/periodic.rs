@@ -1,4 +1,3 @@
-use crate::engine::engine_name;
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
 use crate::variables::get_global_vars;
@@ -15,9 +14,9 @@ pub fn on_second_change(_req: &Request) -> PluginResponse {
   for (k, v) in current.iter() {
     if last.get(k).unwrap_or(&false) != v {
       if *v {
-        lines.push(format!("{} が接続されました", engine_name(*k)));
+        lines.push(format!("{} が接続されました", k.name));
       } else {
-        lines.push(format!("{} が切断されました", engine_name(*k)));
+        lines.push(format!("{} が切断されました", k.name));
       }
     }
   }
