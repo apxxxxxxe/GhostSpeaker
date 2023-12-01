@@ -32,15 +32,16 @@ https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/5e13bf62-1c07-45c9-a5f
 ## どうやって使うの？
 プラグインをインストール後、対応する音声合成エンジンを起動してください。例えば、COEIROINKの場合は`COEIROINKv2.exe`もしくは`engine/engine.exe`を起動します。
 
-![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/a688f933-a2ba-4844-8f6d-e3b2c54ad219)  
+![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/839f5241-6e00-46b1-8d53-49dfecce10e2)    
 エンジンの準備が完了すると、上図のような通知がされます。
 
-![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/2f834f57-c0dc-4936-9965-ab90453a4baa)  
+![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/480b81e6-9665-4577-9b53-c4c27b23c47c)  
 また、プラグイン実行時のメニューでエンジンが"起動中"となっていることを確認してください。
 
-![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/e718e855-c6ab-460d-ac53-331fec5e8dbb)  
+![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/d0f8e33b-4958-4c3d-9946-fad84d302fd8)  
 デフォルトでは読み上げ声質は"無し"となっており、そのままでは読み上げられません。
-メニューから、**起動中の**エンジンで利用可能な声質が選択可能です。（起動中のエンジンがない場合、選択可能な声質はありません。）
+メニューから、**起動中の**エンジンで利用可能な声質が選択可能です。  
+（起動中のエンジンがない場合、選択可能な声質はありません。）
 
 エンジンの準備が完了し次第、ゴーストの台詞が読み上げられるようになります。
 
