@@ -10,10 +10,23 @@ https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/5e13bf62-1c07-45c9-a5f
 音声合成エンジンを利用して、ゴーストの台詞を読み上げることができるプラグインです。  
 現在対応している音声合成エンジンは、
 
+- COEIROINK(v1.x.x)
+- COEIROINK(v2.x.x)
+- ITVOICE
+- LMROID
+- SHAREVOX
 - VOICEVOX
-- COEIROINK(version2.0.0以降)
 
 です。
+
+各エンジンは以下のバージョンで動作確認済みです。
+| Engine    | Version  |
+| COEIROINK | v1.3.0   | 
+| COEIROINK | v2.1.1   |
+| ITVOICE   | v0.1.2   |
+| LMROID    | v1.4.0   |
+| SHAREVOX  | v0.2.1   |
+| VOICEVOX  | v0.14.10 |
 
 ## どうやって使うの？
 プラグインをインストール後、対応する音声合成エンジンを起動してください。例えば、COEIROINKの場合は`COEIROINKv2.exe`もしくは`engine/engine.exe`を起動します。

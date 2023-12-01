@@ -26,9 +26,29 @@ pub const ENGINE_VOICEVOX: Engine = Engine {
   port: 50021,
   name: "VOICEVOX",
 };
+pub const ENGINE_LMROID: Engine = Engine {
+  port: 49973,
+  name: "LMROID",
+};
+pub const ENGINE_SHAREVOX: Engine = Engine {
+  port: 50025,
+  name: "SHAREVOX",
+};
+pub const ENGINE_ITVOICE: Engine = Engine {
+  port: 49540,
+  name: "ITVOICE",
+};
 
-pub static ENGINE_LIST: Lazy<Vec<Engine>> =
-  Lazy::new(|| vec![ENGINE_COEIROINKV2, ENGINE_COEIROINKV1, ENGINE_VOICEVOX]);
+pub static ENGINE_LIST: Lazy<Vec<Engine>> = Lazy::new(|| {
+  vec![
+    ENGINE_COEIROINKV2,
+    ENGINE_COEIROINKV1,
+    ENGINE_VOICEVOX,
+    ENGINE_LMROID,
+    ENGINE_SHAREVOX,
+    ENGINE_ITVOICE,
+  ]
+});
 
 pub const DUMMY_VOICE_UUID: &str = "dummy";
 
