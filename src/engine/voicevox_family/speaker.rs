@@ -11,7 +11,7 @@ struct SpeakersRequest {
 #[derive(Debug, Deserialize)]
 struct SpeakerResponse {
   #[serde(rename = "supported_features")]
-  pub _supported_features: SupportedFeatures,
+  pub _supported_features: Option<SupportedFeatures>,
   pub name: String,
   pub speaker_uuid: String,
   pub styles: Vec<StyleResponse>,

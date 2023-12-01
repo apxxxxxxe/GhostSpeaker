@@ -18,12 +18,17 @@ pub const ENGINE_COEIROINKV2: Engine = Engine {
   port: 50032,
   name: "COEIROINKv2",
 };
+pub const ENGINE_COEIROINKV1: Engine = Engine {
+  port: 50031,
+  name: "COEIROINKv1",
+};
 pub const ENGINE_VOICEVOX: Engine = Engine {
   port: 50021,
   name: "VOICEVOX",
 };
 
-pub static ENGINE_LIST: Lazy<Vec<Engine>> = Lazy::new(|| vec![ENGINE_COEIROINKV2, ENGINE_VOICEVOX]);
+pub static ENGINE_LIST: Lazy<Vec<Engine>> =
+  Lazy::new(|| vec![ENGINE_COEIROINKV2, ENGINE_COEIROINKV1, ENGINE_VOICEVOX]);
 
 pub const DUMMY_VOICE_UUID: &str = "dummy";
 
