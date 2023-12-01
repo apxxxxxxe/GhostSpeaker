@@ -65,7 +65,10 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
             }
           } else {
             color = "\\f[color,128,128,128]";
-            voice = format!("【使用不可: {}の起動が必要】", engine_from_port(c.port).unwrap().name);
+            voice = format!(
+              "【使用不可: {}の起動が必要】",
+              engine_from_port(c.port).unwrap().name
+            );
           }
         }
       }
@@ -180,16 +183,10 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
   let speakers_info = &mut get_global_vars().volatility.speakers_info;
 
   let mut m = format!("\\C\\c\\b[2]\\_q{}\\n{}\\n", ghost_name, character_name);
-  let def = CharacterVoice::default();
+  let def = CharacterVoice::default(None);
   m.push_str(&format!(
     "\\![*]\\q[{},OnVoiceSelected,{},{},{},{},{},{}]\\n",
-    NO_VOICE,
-    ghost_name,
-    character_index,
-    def.port,
-    def.speaker_uuid,
-    def.style_id,
-    ghost_path,
+    NO_VOICE, ghost_name, character_index, def.port, def.speaker_uuid, def.style_id, ghost_path,
   ));
   for (engine, speakers) in speakers_info.iter() {
     for speaker in speakers.iter() {

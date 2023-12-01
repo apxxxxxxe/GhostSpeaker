@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::engine::{Engine, CharacterVoice};
+use crate::engine::{CharacterVoice, Engine};
 use crate::speaker::SpeakerInfo;
 
 const VAR_PATH: &str = "vars.yaml";
@@ -113,7 +113,7 @@ pub struct GhostVoiceInfo {
 impl Default for GhostVoiceInfo {
   fn default() -> Self {
     let mut v = Vec::new();
-    v.resize(10, CharacterVoice::default());
+    v.resize(10, CharacterVoice::default(None));
     GhostVoiceInfo {
       devide_by_lines: false,
       voices: v,
@@ -124,7 +124,7 @@ impl Default for GhostVoiceInfo {
 impl GhostVoiceInfo {
   pub fn new(character_count: usize) -> Self {
     let mut v = Vec::new();
-    v.resize(character_count, CharacterVoice::default());
+    v.resize(character_count, CharacterVoice::default(None));
     GhostVoiceInfo {
       devide_by_lines: false,
       voices: v,

@@ -4,12 +4,11 @@ use tokio::sync::{Mutex, Notify};
 
 use crate::engine::{
   engine_from_port, get_speaker_getters, CharacterVoice, GetSpeakersInfo, Predict, Predictor,
-  DUMMY_VOICE_UUID, ENGINE_COEIROINKV2, ENGINE_VOICEVOX,
+  DUMMY_VOICE_UUID, ENGINE_COEIROINKV2,
 };
 use crate::format::split_dialog;
 use crate::player::free_player;
 use crate::player::play_wav;
-use crate::utils::check_connection;
 use crate::variables::get_global_vars;
 
 pub static mut QUEUE: Option<Queue> = None;
@@ -160,9 +159,14 @@ impl Queue {
 
 async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
   let mut predictors = VecDeque::new();
-  let is_coeiroink_connected = check_connection(ENGINE_COEIROINKV2).await;
-  let is_voicevox_connected = check_connection(ENGINE_VOICEVOX).await;
-  if !is_coeiroink_connected && !is_voicevox_connected {
+  let connected_engines = get_global_vars()
+    .volatility
+    .current_connection_status
+    .iter()
+    .filter(|(_, v)| **v)
+    .map(|(k, _)| *k)
+    .collect::<Vec<_>>();
+  if connected_engines.clone().len() == 0 {
     debug!("no engine connected: skip: {}", args.text);
     return None;
   }
@@ -170,12 +174,7 @@ async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
   // エンジン側に声質が存在しない場合、または
   // descript.txtに記述されていないキャラクターのために
   // デフォルトの声質を用意する
-  let first_aid_voice;
-  if is_voicevox_connected {
-    first_aid_voice = CharacterVoice::default_voicevox();
-  } else {
-    first_aid_voice = CharacterVoice::default_coeiroink();
-  }
+  let first_aid_voice = CharacterVoice::default(Some(connected_engines[0]));
 
   debug!("{}", format!("predicting: {}", args.text));
   let devide_by_lines = get_global_vars()

@@ -1,11 +1,12 @@
 pub mod coeiroink_v2;
 pub mod voicevox_family;
 
-use crate::speaker::SpeakerInfo;
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use crate::speaker::SpeakerInfo;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Serialize)]
 pub struct Engine {
@@ -99,30 +100,34 @@ pub struct CharacterVoice {
 }
 
 impl CharacterVoice {
-  pub fn default_coeiroink() -> Self {
-    // つくよみちゃん-れいせい
-    CharacterVoice {
-      port: ENGINE_COEIROINKV2.port,
-      speaker_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
-      style_id: 0,
-    }
-  }
-  pub fn default_voicevox() -> Self {
-    // ずんだもん-ノーマル
-    CharacterVoice {
-      port: ENGINE_VOICEVOX.port,
-      speaker_uuid: String::from("388f246b-8c41-4ac1-8e2d-5d79f3ff56d9"),
-      style_id: 3,
-    }
-  }
-}
-
-impl Default for CharacterVoice {
-  fn default() -> Self {
-    CharacterVoice {
+  pub fn default(engine: Option<Engine>) -> Self {
+    let dummy_voice = CharacterVoice {
       port: ENGINE_VOICEVOX.port,
       speaker_uuid: DUMMY_VOICE_UUID.to_string(),
       style_id: -1,
+    };
+
+    match engine {
+      Some(engine) => match engine {
+        ENGINE_COEIROINKV2 => {
+          // つくよみちゃん-れいせい
+          CharacterVoice {
+            port: ENGINE_COEIROINKV2.port,
+            speaker_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
+            style_id: 0,
+          }
+        }
+        ENGINE_VOICEVOX => {
+          // ずんだもん-ノーマル
+          CharacterVoice {
+            port: ENGINE_VOICEVOX.port,
+            speaker_uuid: String::from("388f246b-8c41-4ac1-8e2d-5d79f3ff56d9"),
+            style_id: 3,
+          }
+        }
+        _ => dummy_voice,
+      },
+      None => dummy_voice,
     }
   }
 }

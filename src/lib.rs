@@ -5,7 +5,6 @@ mod player;
 mod plugin;
 mod queue;
 mod speaker;
-mod utils;
 mod variables;
 
 use crate::plugin::request::PluginRequest;
@@ -85,76 +84,4 @@ pub extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
 
   unsafe { *len = response_gstr.len() as c_long };
   response_gstr.handle()
-}
-
-#[cfg(test)]
-mod test {
-  use crate::engine::ENGINE_COEIROINK;
-  use crate::events::handle_request;
-  use crate::plugin::request::PluginRequest;
-  use crate::queue::get_queue;
-  use crate::utils::check_connection;
-  use crate::variables::get_global_vars;
-  use shiorust::message::Parser;
-  use std::time::Duration;
-
-  #[test]
-  fn test_main() {
-    get_global_vars().load();
-
-    // init
-    get_queue();
-
-    futures::executor::block_on(async {
-      while !check_connection(ENGINE_COEIROINK).await {
-        println!("waiting...");
-        std::thread::sleep(Duration::from_secs(1));
-      }
-    });
-
-    let pr = PluginRequest::parse(
-            "\
-            GET PLUGIN/2.0\r\n\
-            ID: OnOtherGhostTalk\r\n\
-            Charset: UTF-8\r\n\
-            Reference0: Test\r\n\
-            Reference1: dummy\r\n\
-            Reference2: dummy\r\n\
-            Reference3: dummy\r\n\
-            Reference4: \\0こんにちは\\1ゴーストはこちらを見て微笑んだ。\\0あれ、なにか顔についてる？\\n違う？ならいいけど。\r\n\
-            \r\n\
-            ",
-        )
-        .unwrap();
-    let r = pr.request;
-    println!("{:?}", r);
-
-    let res = handle_request(&r);
-    println!("{:?}", res);
-
-    let pr = PluginRequest::parse(
-      "\
-            GET PLUGIN/2.0\r\n\
-            ID: OnOtherGhostTalk\r\n\
-            Charset: UTF-8\r\n\
-            Reference0: Test\r\n\
-            Reference1: dummy\r\n\
-            Reference2: dummy\r\n\
-            Reference3: dummy\r\n\
-            Reference4: \\0第2トーク。\\1ゴーストは本に目を通している。\r\n\
-            \r\n\
-            ",
-    )
-    .unwrap();
-    let r = pr.request;
-    println!("{:?}", r);
-
-    let res = handle_request(&r);
-    println!("{:?}", res);
-
-    for i in 0..20 {
-      println!("{}", i);
-      std::thread::sleep(Duration::from_secs(1));
-    }
-  }
 }
