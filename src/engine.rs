@@ -142,6 +142,14 @@ impl CharacterVoice {
             style_id: 0,
           }
         }
+        ENGINE_COEIROINKV1 => {
+          // つくよみちゃん-れいせい
+          CharacterVoice {
+            port: ENGINE_COEIROINKV1.port,
+            speaker_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
+            style_id: 0,
+          }
+        }
         ENGINE_VOICEVOX => {
           // ずんだもん-ノーマル
           CharacterVoice {
