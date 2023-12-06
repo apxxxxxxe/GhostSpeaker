@@ -4,7 +4,7 @@ use tokio::sync::{Mutex, Notify};
 
 use crate::engine::{
   engine_from_port, get_speaker_getters, CharacterVoice, GetSpeakersInfo, Predict, Predictor,
-  DUMMY_VOICE_UUID, ENGINE_COEIROINKV2,
+  DUMMY_VOICE_UUID, ENGINE_BOUYOMICHAN, ENGINE_COEIROINKV2,
 };
 use crate::format::split_dialog;
 use crate::player::free_player;
@@ -111,8 +111,10 @@ impl Queue {
           wav = guard.pop_front();
         }
         if let Some(data) = wav {
-          debug!("{}", format!("play: {}", data.len()));
-          play_wav(data);
+          if data.len() != 0 {
+            debug!("{}", format!("play: {}", data.len()));
+            play_wav(data);
+          }
         }
       }
     });
@@ -226,6 +228,12 @@ async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
         predictors.push_back(Predictor::CoeiroinkV2Predictor(
           dialog.text,
           speaker.speaker_uuid,
+          speaker.style_id,
+        ));
+      }
+      ENGINE_BOUYOMICHAN => {
+        predictors.push_back(Predictor::BouyomiChanPredictor(
+          dialog.text,
           speaker.style_id,
         ));
       }

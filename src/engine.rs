@@ -1,3 +1,4 @@
+pub mod bouyomichan;
 pub mod coeiroink_v2;
 pub mod voicevox_family;
 
@@ -7,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::speaker::SpeakerInfo;
+use bouyomichan::speaker::BOUYOMICHAN_UUID;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Serialize)]
 pub struct Engine {
@@ -38,6 +40,10 @@ pub const ENGINE_ITVOICE: Engine = Engine {
   port: 49540,
   name: "ITVOICE",
 };
+pub const ENGINE_BOUYOMICHAN: Engine = Engine {
+  port: 50001,
+  name: "棒読みちゃん",
+};
 
 pub static ENGINE_LIST: Lazy<Vec<Engine>> = Lazy::new(|| {
   vec![
@@ -47,6 +53,7 @@ pub static ENGINE_LIST: Lazy<Vec<Engine>> = Lazy::new(|| {
     ENGINE_LMROID,
     ENGINE_SHAREVOX,
     ENGINE_ITVOICE,
+    ENGINE_BOUYOMICHAN,
   ]
 });
 
@@ -59,6 +66,7 @@ pub fn engine_from_port(port: i32) -> Option<Engine> {
 pub enum Predictor {
   CoeiroinkV2Predictor(String, String, i32),
   VoiceVoxFamilyPredictor(Engine, String, i32),
+  BouyomiChanPredictor(String, i32),
 }
 
 #[async_trait]
@@ -76,6 +84,9 @@ impl Predict for Predictor {
       Predictor::VoiceVoxFamilyPredictor(port, text, speaker) => {
         voicevox_family::predict::predict_text(*port, text.clone(), speaker.clone()).await
       }
+      Predictor::BouyomiChanPredictor(text, style_id) => {
+        bouyomichan::predict::predict_text(text.clone(), *style_id).await
+      }
     }
   }
 }
@@ -83,6 +94,7 @@ impl Predict for Predictor {
 pub enum SpeakerGetter {
   CoeiroinkV2SpeakerGetter,
   VoiceVoxFamilySpeakerGetter(Engine),
+  BouyomiChanSpeakerGetter,
 }
 
 pub fn get_speaker_getters() -> HashMap<Engine, SpeakerGetter> {
@@ -96,6 +108,7 @@ pub fn get_speaker_getters() -> HashMap<Engine, SpeakerGetter> {
 fn get_speaker_getter(engine: Engine) -> SpeakerGetter {
   match engine {
     ENGINE_COEIROINKV2 => SpeakerGetter::CoeiroinkV2SpeakerGetter,
+    ENGINE_BOUYOMICHAN => SpeakerGetter::BouyomiChanSpeakerGetter,
     engine => SpeakerGetter::VoiceVoxFamilySpeakerGetter(engine),
   }
 }
@@ -113,6 +126,7 @@ impl GetSpeakersInfo for SpeakerGetter {
       SpeakerGetter::VoiceVoxFamilySpeakerGetter(port) => {
         voicevox_family::speaker::get_speakers_info(*port).await
       }
+      SpeakerGetter::BouyomiChanSpeakerGetter => bouyomichan::speaker::get_speakers_info().await,
     }
   }
 }
@@ -156,6 +170,14 @@ impl CharacterVoice {
             port: ENGINE_VOICEVOX.port,
             speaker_uuid: String::from("388f246b-8c41-4ac1-8e2d-5d79f3ff56d9"),
             style_id: 3,
+          }
+        }
+        ENGINE_BOUYOMICHAN => {
+          // 棒読みちゃん-女性1
+          CharacterVoice {
+            port: ENGINE_BOUYOMICHAN.port,
+            speaker_uuid: BOUYOMICHAN_UUID.to_string(),
+            style_id: 1,
           }
         }
         _ => dummy_voice,

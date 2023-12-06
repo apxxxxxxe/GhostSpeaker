@@ -16,18 +16,20 @@ https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/5e13bf62-1c07-45c9-a5f
 - [LMROID](https://lmroidsoftware.wixsite.com/nhoshio)
 - [SHAREVOX](https://www.sharevox.app/)
 - [VOICEVOX](https://voicevox.hiroshiba.jp/)
+- [棒読みちゃん](https://chi.usamimi.info/Program/Application/BouyomiChan/)
 
 です。
 
 各エンジンは以下のバージョンで動作確認済みです。
-| Engine    | Version  |
-| --------- | -------- |
-| COEIROINK | v1.3.0   | 
-| COEIROINK | v2.1.1   |
-| ITVOICE   | v0.1.2   |
-| LMROID    | v1.4.0   |
-| SHAREVOX  | v0.2.1   |
-| VOICEVOX  | v0.14.10 |
+| Engine       | Version  |
+| ---------    | -------- |
+| COEIROINK    | v1.3.0   | 
+| COEIROINK    | v2.1.1   |
+| ITVOICE      | v0.1.2   |
+| LMROID       | v1.4.0   |
+| SHAREVOX     | v0.2.1   |
+| VOICEVOX     | v0.14.10 |
+| 棒読みちゃん | 0.1.10.0 |
 
 ## どうやって使うの？
 プラグインをインストール後、対応する音声合成エンジンを起動してください。例えば、COEIROINKの場合は`COEIROINKv2.exe`もしくは`engine/engine.exe`を起動します。
