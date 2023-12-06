@@ -2,8 +2,11 @@ use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::{Mutex, Notify};
 
+use crate::engine::bouyomichan::predict::BouyomichanPredictor;
+use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
+use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{
-  engine_from_port, get_speaker_getters, CharacterVoice, GetSpeakersInfo, Predict, Predictor,
+  engine_from_port, get_speaker_getters, CharacterVoice, GetSpeakersInfo, Predictor,
   DUMMY_VOICE_UUID, ENGINE_BOUYOMICHAN, ENGINE_COEIROINKV2,
 };
 use crate::format::split_dialog;
@@ -15,15 +18,10 @@ pub static mut QUEUE: Option<Queue> = None;
 
 pub struct Queue {
   runtime: Option<tokio::runtime::Runtime>,
-  predict_queue: Arc<Mutex<VecDeque<PredictArgs>>>,
+  predict_queue: Arc<Mutex<VecDeque<(String, String)>>>,
   predict_notifier: Arc<Notify>,
   play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
   play_notifier: Arc<Notify>,
-}
-
-pub struct PredictArgs {
-  pub text: String,
-  pub ghost_name: String,
 }
 
 impl Queue {
@@ -140,10 +138,15 @@ impl Queue {
     debug!("{}", "restarted queue");
   }
 
-  pub fn push_to_prediction(&self, args: PredictArgs) {
+  pub fn push_to_prediction(&self, text: String, ghost_name: String) {
     debug!("pushing to prediction");
     futures::executor::block_on(async {
-      self.predict_queue.lock().await.push_back(args);
+      // 処理が重いので、別スレッドに投げてそっちでPredictorを作る
+      self
+        .predict_queue
+        .lock()
+        .await
+        .push_back((text, ghost_name));
     });
     self.predict_notifier.notify_one();
     debug!("pushed and notified to prediction");
@@ -159,8 +162,11 @@ impl Queue {
   }
 }
 
-async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
-  let mut predictors = VecDeque::new();
+async fn args_to_predictors(
+  args: (String, String),
+) -> Option<VecDeque<Box<dyn Predictor + Send + Sync>>> {
+  let (text, ghost_name) = args;
+  let mut predictors: VecDeque<Box<dyn Predictor + Send + Sync>> = VecDeque::new();
   let connected_engines = get_global_vars()
     .volatility
     .current_connection_status
@@ -169,7 +175,7 @@ async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
     .map(|(k, _)| *k)
     .collect::<Vec<_>>();
   if connected_engines.clone().len() == 0 {
-    debug!("no engine connected: skip: {}", args.text);
+    debug!("no engine connected: skip: {}", text);
     return None;
   }
 
@@ -178,17 +184,17 @@ async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
   // デフォルトの声質を用意する
   let first_aid_voice = CharacterVoice::default(Some(connected_engines[0]));
 
-  debug!("{}", format!("predicting: {}", args.text));
+  debug!("{}", format!("predicting: {}", text));
   let devide_by_lines = get_global_vars()
     .ghosts_voices
     .as_ref()
     .unwrap()
-    .get(&args.ghost_name)
+    .get(&ghost_name)
     .unwrap()
     .devide_by_lines;
   let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
 
-  for dialog in split_dialog(args.text, devide_by_lines, speak_by_punctuation) {
+  for dialog in split_dialog(text, devide_by_lines, speak_by_punctuation) {
     if dialog.text.is_empty() {
       continue;
     }
@@ -197,7 +203,7 @@ async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
       .ghosts_voices
       .as_ref()
       .unwrap()
-      .get(&args.ghost_name)
+      .get(&ghost_name)
       .unwrap()
       .voices
       .get(dialog.scope)
@@ -225,24 +231,24 @@ async fn args_to_predictors(args: PredictArgs) -> Option<VecDeque<Predictor>> {
     }
     match engine_from_port(speaker.port).unwrap() {
       ENGINE_COEIROINKV2 => {
-        predictors.push_back(Predictor::CoeiroinkV2Predictor(
+        predictors.push_back(Box::new(CoeiroinkV2Predictor::new(
           dialog.text,
           speaker.speaker_uuid,
           speaker.style_id,
-        ));
+        )));
       }
       ENGINE_BOUYOMICHAN => {
-        predictors.push_back(Predictor::BouyomiChanPredictor(
+        predictors.push_back(Box::new(BouyomichanPredictor::new(
           dialog.text,
           speaker.style_id,
-        ));
+        )));
       }
       engine => {
-        predictors.push_back(Predictor::VoiceVoxFamilyPredictor(
+        predictors.push_back(Box::new(VoicevoxFamilyPredictor::new(
           engine,
           dialog.text,
           speaker.style_id,
-        ));
+        )));
       }
     }
   }

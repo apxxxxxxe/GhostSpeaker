@@ -63,32 +63,9 @@ pub fn engine_from_port(port: i32) -> Option<Engine> {
   ENGINE_LIST.iter().find(|e| e.port == port).cloned()
 }
 
-pub enum Predictor {
-  CoeiroinkV2Predictor(String, String, i32),
-  VoiceVoxFamilyPredictor(Engine, String, i32),
-  BouyomiChanPredictor(String, i32),
-}
-
 #[async_trait]
-pub trait Predict {
+pub trait Predictor {
   async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>>;
-}
-
-#[async_trait]
-impl Predict for Predictor {
-  async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    match self {
-      Predictor::CoeiroinkV2Predictor(text, speaker_uuid, style_id) => {
-        coeiroink_v2::predict::predict_text(text.clone(), speaker_uuid.clone(), *style_id).await
-      }
-      Predictor::VoiceVoxFamilyPredictor(port, text, speaker) => {
-        voicevox_family::predict::predict_text(*port, text.clone(), speaker.clone()).await
-      }
-      Predictor::BouyomiChanPredictor(text, style_id) => {
-        bouyomichan::predict::predict_text(text.clone(), *style_id).await
-      }
-    }
-  }
 }
 
 pub enum SpeakerGetter {

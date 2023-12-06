@@ -1,6 +1,6 @@
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
-use crate::queue::{get_queue, PredictArgs};
+use crate::queue::get_queue;
 use crate::variables::{get_global_vars, GhostVoiceInfo};
 use shiorust::message::Request;
 
@@ -10,10 +10,7 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
   let msg = refs[4].to_string();
 
   if !msg.is_empty() {
-    get_queue().push_to_prediction(PredictArgs {
-      text: msg.clone(),
-      ghost_name: ghost_name.clone(),
-    });
+    get_queue().push_to_prediction(msg.clone(), ghost_name.clone());
   }
 
   new_response_nocontent()
