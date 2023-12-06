@@ -6,8 +6,8 @@ use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{
-  engine_from_port, get_speaker_getters, CharacterVoice, GetSpeakersInfo, Predictor,
-  DUMMY_VOICE_UUID, ENGINE_BOUYOMICHAN, ENGINE_COEIROINKV2,
+  engine_from_port, get_speaker_getters, CharacterVoice, Predictor, DUMMY_VOICE_UUID,
+  ENGINE_BOUYOMICHAN, ENGINE_COEIROINKV2,
 };
 use crate::format::split_dialog;
 use crate::player::free_player;

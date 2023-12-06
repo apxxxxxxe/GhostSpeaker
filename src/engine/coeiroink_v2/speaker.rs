@@ -1,5 +1,7 @@
+use async_trait::async_trait;
 use serde::Deserialize;
 
+use crate::engine::SpeakerGetter;
 use crate::speaker::{SpeakerInfo, Style};
 
 #[derive(Debug, Deserialize)]
@@ -54,28 +56,33 @@ impl StyleResponse {
   }
 }
 
-pub async fn get_speakers_info() -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error>> {
-  const URL: &str = "http://localhost:50032/v1/speakers";
-  println!("Requesting speakers info from {}", URL);
+pub struct CoeiroinkV2SpeakerGetter;
 
-  debug!("getting speakers info");
-  let body;
-  match reqwest::Client::new().get(URL).send().await {
-    Ok(res) => {
-      debug!("get_speakers_info success");
-      body = res.text().await?;
+#[async_trait]
+impl SpeakerGetter for CoeiroinkV2SpeakerGetter {
+  async fn get_speakers_info(&self) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error>> {
+    const URL: &str = "http://localhost:50032/v1/speakers";
+    println!("Requesting speakers info from {}", URL);
+
+    debug!("getting speakers info");
+    let body;
+    match reqwest::Client::new().get(URL).send().await {
+      Ok(res) => {
+        debug!("get_speakers_info success");
+        body = res.text().await?;
+      }
+      Err(e) => {
+        println!("Failed to get speakers info: {}", e);
+        return Err(Box::new(e));
+      }
     }
-    Err(e) => {
-      println!("Failed to get speakers info: {}", e);
-      return Err(Box::new(e));
+    let speakers_responses: Vec<SpeakerResponse> = serde_json::from_str(&body)?;
+
+    let mut speakers_info: Vec<SpeakerInfo> = Vec::new();
+    for speaker_response in speakers_responses {
+      speakers_info.push(speaker_response.to_speaker_info());
     }
-  }
-  let speakers_responses: Vec<SpeakerResponse> = serde_json::from_str(&body)?;
 
-  let mut speakers_info: Vec<SpeakerInfo> = Vec::new();
-  for speaker_response in speakers_responses {
-    speakers_info.push(speaker_response.to_speaker_info());
+    Ok(speakers_info)
   }
-
-  Ok(speakers_info)
 }

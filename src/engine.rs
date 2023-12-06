@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::speaker::SpeakerInfo;
-use bouyomichan::speaker::BOUYOMICHAN_UUID;
+use bouyomichan::speaker::{BouyomiChanSpeakerGetter, BOUYOMICHAN_UUID};
+use coeiroink_v2::speaker::CoeiroinkV2SpeakerGetter;
+use voicevox_family::speaker::VoicevoxFamilySpeakerGetter;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Serialize)]
 pub struct Engine {
@@ -68,13 +70,7 @@ pub trait Predictor {
   async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>>;
 }
 
-pub enum SpeakerGetter {
-  CoeiroinkV2SpeakerGetter,
-  VoiceVoxFamilySpeakerGetter(Engine),
-  BouyomiChanSpeakerGetter,
-}
-
-pub fn get_speaker_getters() -> HashMap<Engine, SpeakerGetter> {
+pub fn get_speaker_getters() -> HashMap<Engine, Box<dyn SpeakerGetter + Send + Sync>> {
   let mut map = HashMap::new();
   for engine in ENGINE_LIST.iter() {
     map.insert(*engine, get_speaker_getter(*engine));
@@ -82,30 +78,17 @@ pub fn get_speaker_getters() -> HashMap<Engine, SpeakerGetter> {
   map
 }
 
-fn get_speaker_getter(engine: Engine) -> SpeakerGetter {
+fn get_speaker_getter(engine: Engine) -> Box<dyn SpeakerGetter + Send + Sync> {
   match engine {
-    ENGINE_COEIROINKV2 => SpeakerGetter::CoeiroinkV2SpeakerGetter,
-    ENGINE_BOUYOMICHAN => SpeakerGetter::BouyomiChanSpeakerGetter,
-    engine => SpeakerGetter::VoiceVoxFamilySpeakerGetter(engine),
+    ENGINE_COEIROINKV2 => Box::new(CoeiroinkV2SpeakerGetter),
+    ENGINE_BOUYOMICHAN => Box::new(BouyomiChanSpeakerGetter),
+    engine => Box::new(VoicevoxFamilySpeakerGetter { engine }),
   }
 }
 
 #[async_trait]
-pub trait GetSpeakersInfo {
+pub trait SpeakerGetter {
   async fn get_speakers_info(&self) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error>>;
-}
-
-#[async_trait]
-impl GetSpeakersInfo for SpeakerGetter {
-  async fn get_speakers_info(&self) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error>> {
-    match self {
-      SpeakerGetter::CoeiroinkV2SpeakerGetter => coeiroink_v2::speaker::get_speakers_info().await,
-      SpeakerGetter::VoiceVoxFamilySpeakerGetter(port) => {
-        voicevox_family::speaker::get_speakers_info(*port).await
-      }
-      SpeakerGetter::BouyomiChanSpeakerGetter => bouyomichan::speaker::get_speakers_info().await,
-    }
-  }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

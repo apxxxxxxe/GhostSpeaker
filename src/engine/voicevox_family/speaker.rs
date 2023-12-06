@@ -1,6 +1,7 @@
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::engine::Engine;
+use crate::engine::{Engine, SpeakerGetter};
 use crate::speaker::{SpeakerInfo, Style};
 
 #[derive(Debug, Serialize)]
@@ -50,26 +51,31 @@ impl StyleResponse {
   }
 }
 
-pub async fn get_speakers_info(
-  engine: Engine,
-) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error>> {
-  let domain: String = format!("http://localhost:{}/", engine.port);
-  println!("Requesting speakers info from {}", domain);
+pub struct VoicevoxFamilySpeakerGetter {
+  pub engine: Engine,
+}
 
-  debug!("getting speakers info");
-  let body = reqwest::Client::new()
-    .get(format!("{}{}", domain, "speakers").as_str())
-    .header("Content-Type", "application/json")
-    .send()
-    .await?
-    .text()
-    .await?;
-  let speakers_responses: Vec<SpeakerResponse> = serde_json::from_str(&body)?;
+#[async_trait]
+impl SpeakerGetter for VoicevoxFamilySpeakerGetter {
+  async fn get_speakers_info(&self) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error>> {
+    let domain: String = format!("http://localhost:{}/", self.engine.port);
+    println!("Requesting speakers info from {}", domain);
 
-  let mut speakers_info: Vec<SpeakerInfo> = Vec::new();
-  for speaker_response in speakers_responses {
-    speakers_info.push(speaker_response.to_speaker_info());
+    debug!("getting speakers info");
+    let body = reqwest::Client::new()
+      .get(format!("{}{}", domain, "speakers").as_str())
+      .header("Content-Type", "application/json")
+      .send()
+      .await?
+      .text()
+      .await?;
+    let speakers_responses: Vec<SpeakerResponse> = serde_json::from_str(&body)?;
+
+    let mut speakers_info: Vec<SpeakerInfo> = Vec::new();
+    for speaker_response in speakers_responses {
+      speakers_info.push(speaker_response.to_speaker_info());
+    }
+
+    Ok(speakers_info)
   }
-
-  Ok(speakers_info)
 }
