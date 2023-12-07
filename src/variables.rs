@@ -35,7 +35,7 @@ impl GlobalVariables {
       engine_path: Some(HashMap::new()),
       engine_auto_start: Some(HashMap::new()),
       volume: Some(1.0),
-      speak_by_punctuation: Some(false),
+      speak_by_punctuation: Some(true),
       ghosts_voices: Some(HashMap::new()),
       volatility: VolatilityVariables::default(),
     }
