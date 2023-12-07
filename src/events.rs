@@ -12,7 +12,7 @@ use shiorust::message::{parts::*, traits::*, Request};
 
 pub fn handle_request(req: &Request) -> PluginResponse {
   match req.method {
-    Method::GET => (),
+    Method::GET | Method::NOTIFY => (),
     _ => return new_response_nocontent(),
   };
 
