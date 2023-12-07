@@ -10,7 +10,6 @@ mod variables;
 use crate::plugin::request::PluginRequest;
 use crate::queue::get_queue;
 use crate::variables::get_global_vars;
-
 use shiori_hglobal::*;
 use shiorust::message::Parser;
 use simplelog::*;

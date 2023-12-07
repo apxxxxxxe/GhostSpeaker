@@ -1,8 +1,7 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
 use crate::engine::{CharacterVoice, Engine};
 use crate::speaker::SpeakerInfo;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 const VAR_PATH: &str = "vars.yaml";
 static mut GLOBALVARS: Option<GlobalVariables> = None;

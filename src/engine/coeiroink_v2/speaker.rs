@@ -1,8 +1,7 @@
-use async_trait::async_trait;
-use serde::Deserialize;
-
 use crate::engine::SpeakerGetter;
 use crate::speaker::{SpeakerInfo, Style};
+use async_trait::async_trait;
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct SpeakerResponse {

@@ -1,7 +1,3 @@
-use async_std::sync::Arc;
-use std::collections::VecDeque;
-use tokio::sync::{Mutex, Notify};
-
 use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
@@ -13,6 +9,9 @@ use crate::format::split_dialog;
 use crate::player::free_player;
 use crate::player::play_wav;
 use crate::variables::get_global_vars;
+use async_std::sync::Arc;
+use std::collections::VecDeque;
+use tokio::sync::{Mutex, Notify};
 
 pub static mut QUEUE: Option<Queue> = None;
 

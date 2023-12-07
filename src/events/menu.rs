@@ -6,7 +6,6 @@ use crate::player::get_player;
 use crate::plugin::response::PluginResponse;
 use crate::queue::get_queue;
 use crate::variables::get_global_vars;
-
 use shiorust::message::Request;
 
 const DEFAULT_VOICE: &str = "【不明】";

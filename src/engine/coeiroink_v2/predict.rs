@@ -1,8 +1,7 @@
+use crate::engine::Predictor;
 use async_trait::async_trait;
 use http::StatusCode;
 use serde::Serialize;
-
-use crate::engine::Predictor;
 
 #[derive(Debug, Serialize)]
 pub struct PredictRequest {

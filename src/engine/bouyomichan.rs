@@ -1,11 +1,10 @@
 pub mod predict;
 pub mod speaker;
 
+use crate::engine::ENGINE_BOUYOMICHAN;
 use std::error::Error;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-
-use crate::engine::ENGINE_BOUYOMICHAN;
 
 pub fn connect() -> Result<TcpStream, Box<dyn Error>> {
   let address = SocketAddr::new(

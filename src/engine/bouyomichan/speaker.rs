@@ -1,8 +1,7 @@
-use async_trait::async_trait;
-use sysinfo::{ProcessExt, System, SystemExt};
-
 use crate::engine::{SpeakerGetter, ENGINE_BOUYOMICHAN};
 use crate::speaker::{SpeakerInfo, Style};
+use async_trait::async_trait;
+use sysinfo::{ProcessExt, System, SystemExt};
 
 pub const BOUYOMICHAN_UUID: &str = "bouyomichan";
 

@@ -2,14 +2,13 @@ pub mod bouyomichan;
 pub mod coeiroink_v2;
 pub mod voicevox_family;
 
+use crate::speaker::SpeakerInfo;
 use async_trait::async_trait;
+use bouyomichan::speaker::{BouyomiChanSpeakerGetter, BOUYOMICHAN_UUID};
+use coeiroink_v2::speaker::CoeiroinkV2SpeakerGetter;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-use crate::speaker::SpeakerInfo;
-use bouyomichan::speaker::{BouyomiChanSpeakerGetter, BOUYOMICHAN_UUID};
-use coeiroink_v2::speaker::CoeiroinkV2SpeakerGetter;
 use voicevox_family::speaker::VoicevoxFamilySpeakerGetter;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Serialize)]

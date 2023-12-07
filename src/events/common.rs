@@ -1,11 +1,9 @@
+use crate::plugin::response::PluginResponse;
+use encoding_rs::{SHIFT_JIS, UTF_8};
+use shiorust::message::{parts::HeaderName, parts::*, traits::*, Request, Response};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-
-use encoding_rs::{SHIFT_JIS, UTF_8};
-use shiorust::message::{parts::HeaderName, parts::*, traits::*, Request, Response};
-
-use crate::plugin::response::PluginResponse;
 
 pub fn new_response() -> PluginResponse {
   let mut headers = Headers::new();

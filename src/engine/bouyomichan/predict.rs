@@ -1,8 +1,7 @@
-use async_trait::async_trait;
-
 use crate::engine::bouyomichan::speak;
 use crate::engine::Predictor;
 use crate::variables::get_global_vars;
+use async_trait::async_trait;
 
 #[derive(Debug)]
 pub struct BouyomichanPredictor {

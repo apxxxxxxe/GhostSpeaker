@@ -9,7 +9,6 @@ use crate::events::menu::*;
 use crate::events::other_ghost::*;
 use crate::events::periodic::*;
 use crate::plugin::response::PluginResponse;
-
 use shiorust::message::{parts::*, traits::*, Request};
 
 pub fn handle_request(req: &Request) -> PluginResponse {

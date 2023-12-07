@@ -1,9 +1,7 @@
+use crate::variables::get_global_vars;
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 use std::io::BufReader;
 use std::io::Cursor;
-
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
-
-use crate::variables::get_global_vars;
 
 static mut PLAYER: Option<Player> = None;
 

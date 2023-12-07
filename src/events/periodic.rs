@@ -1,7 +1,6 @@
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
 use crate::variables::get_global_vars;
-
 use shiorust::message::Request;
 
 pub fn on_second_change(_req: &Request) -> PluginResponse {
