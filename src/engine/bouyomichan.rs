@@ -1,7 +1,7 @@
 pub mod predict;
 pub mod speaker;
 
-use crate::engine::ENGINE_BOUYOMICHAN;
+use crate::engine::Engine;
 use std::error::Error;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
@@ -9,7 +9,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 pub fn connect() -> Result<TcpStream, Box<dyn Error>> {
   let address = SocketAddr::new(
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-    ENGINE_BOUYOMICHAN.port as u16,
+    Engine::BouyomiChan.port() as u16,
   );
   let stream = TcpStream::connect(address)?;
 

@@ -2,8 +2,7 @@ use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{
-  engine_from_port, get_speaker_getters, CharacterVoice, Predictor, DUMMY_VOICE_UUID,
-  ENGINE_BOUYOMICHAN, ENGINE_COEIROINKV2,
+  engine_from_port, get_speaker_getters, CharacterVoice, Engine, Predictor, DUMMY_VOICE_UUID,
 };
 use crate::format::split_dialog;
 use crate::player::free_player;
@@ -228,21 +227,26 @@ async fn args_to_predictors(
         speaker = first_aid_voice.clone();
       }
     }
-    match engine_from_port(speaker.port).unwrap() {
-      ENGINE_COEIROINKV2 => {
+    let engine = engine_from_port(speaker.port).unwrap();
+    match engine {
+      Engine::CoeiroInkV2 => {
         predictors.push_back(Box::new(CoeiroinkV2Predictor::new(
           dialog.text,
           speaker.speaker_uuid,
           speaker.style_id,
         )));
       }
-      ENGINE_BOUYOMICHAN => {
+      Engine::BouyomiChan => {
         predictors.push_back(Box::new(BouyomichanPredictor::new(
           dialog.text,
           speaker.style_id,
         )));
       }
-      engine => {
+      Engine::CoeiroInkV1
+      | Engine::VoiceVox
+      | Engine::Lmroid
+      | Engine::ShareVox
+      | Engine::ItVoice => {
         predictors.push_back(Box::new(VoicevoxFamilyPredictor::new(
           engine,
           dialog.text,

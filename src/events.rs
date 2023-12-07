@@ -61,6 +61,7 @@ fn get_event(id: &str) -> Option<fn(&Request) -> PluginResponse> {
     "OnPunctuationSettingChanged" => Some(on_punctuation_setting_changed),
     "OnSecondChange" => Some(on_second_change),
     "OnPlayerClear" => Some(on_player_clear),
+    "OnAutoStartToggled" => Some(on_auto_start_toggled),
     "OnGhostBoot" => Some(on_ghost_boot),
     _ => None,
   }

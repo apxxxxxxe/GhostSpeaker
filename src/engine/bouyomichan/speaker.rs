@@ -1,4 +1,4 @@
-use crate::engine::{SpeakerGetter, ENGINE_BOUYOMICHAN};
+use crate::engine::{Engine, SpeakerGetter};
 use crate::speaker::{SpeakerInfo, Style};
 use async_trait::async_trait;
 use sysinfo::{ProcessExt, System, SystemExt};
@@ -15,7 +15,7 @@ impl SpeakerGetter for BouyomiChanSpeakerGetter {
     }
 
     let speakers_info = vec![SpeakerInfo {
-      speaker_name: ENGINE_BOUYOMICHAN.name.to_string(),
+      speaker_name: Engine::BouyomiChan.name().to_string(),
       speaker_uuid: BOUYOMICHAN_UUID.to_string(),
       styles: vec![
         Style {

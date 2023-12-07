@@ -22,7 +22,7 @@ impl VoicevoxFamilyPredictor {
 #[async_trait]
 impl Predictor for VoicevoxFamilyPredictor {
   async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let domain: String = format!("http://localhost:{}/", self.engine.port);
+    let domain: String = format!("http://localhost:{}/", self.engine.port());
 
     let synthesis_req: Vec<u8>;
     match reqwest::Client::new()

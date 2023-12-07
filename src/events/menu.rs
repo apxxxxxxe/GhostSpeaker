@@ -7,6 +7,7 @@ use crate::plugin::response::PluginResponse;
 use crate::queue::get_queue;
 use crate::variables::get_global_vars;
 use shiorust::message::Request;
+use std::collections::HashMap;
 
 const DEFAULT_VOICE: &str = "【不明】";
 const NO_VOICE: &str = "無し";
@@ -66,7 +67,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
             color = "\\f[color,128,128,128]";
             voice = format!(
               "【使用不可: {}の起動が必要】",
-              engine_from_port(c.port).unwrap().name
+              engine_from_port(c.port).unwrap().name()
             );
           }
         }
@@ -89,16 +90,40 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
   }
 
   let mut engine_status = String::new();
+  let empty = HashMap::new();
+  let engine_auto_start = get_global_vars()
+    .engine_auto_start
+    .as_ref()
+    .unwrap_or(&empty);
   for engine in ENGINE_LIST.iter() {
     if speakers_info.contains_key(engine) {
       engine_status += &format!(
-        "{}: \\f[color,0,128,0]起動中\\f[color,default]\\n",
-        engine.name
+        "{}: \\f[color,0,128,0]起動中\\f[color,default]",
+        engine.name()
       );
     } else {
       engine_status += &format!(
-        "{}: \\f[color,128,128,128]停止中\\f[color,default]\\n",
-        engine.name
+        "{}: \\f[color,128,128,128]停止中\\f[color,default]",
+        engine.name()
+      );
+    }
+    let is_auto_start_string: String;
+    if let Some(is_auto_start) = engine_auto_start.get(engine) {
+      if *is_auto_start {
+        is_auto_start_string = "\\f[color,0,128,0]有効\\f[color,default]".to_string();
+      } else {
+        is_auto_start_string = "\\f[color,128,0,0]無効\\f[color,default]".to_string();
+      }
+      engine_status += &format!(
+        "\\_l[@0,]\\f[align,right]自動起動: \\__q[OnAutoStartToggled,{},{},{}]{}\\__q\\n",
+        engine.port(),
+        refs[1],
+        path_for_arg,
+        is_auto_start_string,
+      );
+    } else {
+      engine_status += &format!(
+        "\\_l[@0,]\\f[align,right]自動起動: \\f[color,128,128,128]設定未完了\\f[color,default]\\n"
       );
     }
   }
@@ -151,16 +176,19 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
 
   let m = format!(
     "\
-    \\b[2]\\_q\
-    {}\
-    {}\
-    {}\\n\
-    {}\\n\
-    \\![*]音量調整(共通)\\n    {}\
-    \\![*]句読点ごとにCOIROINKへ送信(共通)\\n    {}\
-    \\![*]改行で一拍おく(ゴースト別)\\n    {}\
-    \\n\\q[×,]\
-    ",
+      \\b[2]\\_q\
+      \\f[align,center]\\f[size,12]{} v{}\\f[size,default]\\n\\n[half]\\f[align,left]\
+      {}\
+      {}\
+      {}\\n\
+      {}\\n\
+      \\![*]音量調整(共通)\\n    {}\
+      \\![*]句読点ごとにCOIROINKへ送信(共通)\\n    {}\
+      \\![*]改行で一拍おく(ゴースト別)\\n    {}\
+      \\n\\q[×,]\
+      ",
+    get_global_vars().volatility.plugin_name,
+    env!("CARGO_PKG_VERSION"),
     engine_status,
     player_clearer,
     ghost_name,
@@ -196,7 +224,7 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
           style.style_name.as_ref().unwrap(),
           ghost_name,
           character_index,
-          engine.port,
+          engine.port(),
           speaker.speaker_uuid,
           style.style_id.unwrap(),
           ghost_path,
@@ -304,6 +332,31 @@ pub fn on_player_clear(req: &Request) -> PluginResponse {
   let path_for_arg = refs[1].to_string();
   get_queue().restart();
   get_player().sink.clear();
+
+  let script = format!(
+    "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+    get_global_vars().volatility.plugin_uuid,
+    ghost_name,
+    path_for_arg
+  );
+  new_response_with_script(script, false)
+}
+
+pub fn on_auto_start_toggled(req: &Request) -> PluginResponse {
+  let refs = get_references(req);
+  let port = refs[0].parse::<i32>().unwrap();
+  let ghost_name = refs[1].to_string();
+  let path_for_arg = refs[2].to_string();
+
+  let engine = engine_from_port(port).unwrap();
+  if let Some(auto_start) = get_global_vars()
+    .engine_auto_start
+    .as_mut()
+    .unwrap()
+    .get_mut(&engine)
+  {
+    *auto_start = !*auto_start;
+  }
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",

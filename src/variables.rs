@@ -11,7 +11,10 @@ pub struct GlobalVariables {
   // 変数を追加した場合はloadの中身も変更することを忘れないように
 
   // エンジンのパス
-  pub engine_path: Option<String>,
+  pub engine_path: Option<HashMap<Engine, String>>,
+
+  // 各エンジンを起動時に起動するかどうか
+  pub engine_auto_start: Option<HashMap<Engine, bool>>,
 
   // 読み上げ音量
   pub volume: Option<f32>,
@@ -29,7 +32,8 @@ pub struct GlobalVariables {
 impl GlobalVariables {
   pub fn new() -> Self {
     Self {
-      engine_path: None,
+      engine_path: Some(HashMap::new()),
+      engine_auto_start: Some(HashMap::new()),
       volume: Some(1.0),
       speak_by_punctuation: Some(false),
       ghosts_voices: Some(HashMap::new()),
@@ -59,6 +63,9 @@ impl GlobalVariables {
     // TODO: 変数追加時はここに追加することを忘れない
     if let Some(p) = vars.engine_path {
       self.engine_path = Some(p);
+    };
+    if let Some(a) = vars.engine_auto_start {
+      self.engine_auto_start = Some(a);
     };
     if let Some(v) = vars.volume {
       self.volume = Some(v);

@@ -5,6 +5,7 @@ mod player;
 mod plugin;
 mod queue;
 mod speaker;
+mod system;
 mod variables;
 
 use crate::plugin::request::PluginRequest;
@@ -50,6 +51,15 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
   panic::set_hook(Box::new(|panic_info| {
     debug!("{}", panic_info);
   }));
+
+  // autostart enabled engines
+  for (engine, auto_start) in get_global_vars().engine_auto_start.as_ref().unwrap() {
+    if *auto_start {
+      if let Err(e) = system::boot_engine(*engine) {
+        error!("Failed to boot {}: {}", engine.name(), e);
+      }
+    }
+  }
 
   debug!("load");
 
