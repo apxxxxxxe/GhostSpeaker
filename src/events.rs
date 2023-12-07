@@ -1,4 +1,3 @@
-mod bootend;
 mod common;
 mod menu;
 mod other_ghost;
