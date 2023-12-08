@@ -4,7 +4,7 @@ use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{
   engine_from_port, get_speaker_getters, CharacterVoice, Engine, Predictor, DUMMY_VOICE_UUID,
 };
-use crate::format::split_dialog;
+use crate::format::{split_by_punctuation, split_dialog};
 use crate::player::free_player;
 use crate::player::play_wav;
 use crate::variables::get_global_vars;
@@ -190,22 +190,31 @@ async fn args_to_predictors(
     .get(&ghost_name)
     .unwrap()
     .devide_by_lines;
-  let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
 
-  for dialog in split_dialog(text, devide_by_lines, speak_by_punctuation) {
+  let speakers = &get_global_vars()
+    .ghosts_voices
+    .as_ref()
+    .unwrap()
+    .get(&ghost_name)
+    .unwrap()
+    .voices;
+  let contains_bouyomichan = speakers
+    .iter()
+    .find(|s| s.port == Engine::BouyomiChan.port())
+    .is_some();
+
+  let speak_by_punctuation = if contains_bouyomichan {
+    get_global_vars().speak_by_punctuation.unwrap()
+  } else {
+    false
+  };
+
+  for dialog in split_dialog(text, devide_by_lines) {
     if dialog.text.is_empty() {
       continue;
     }
 
-    let mut speaker = match get_global_vars()
-      .ghosts_voices
-      .as_ref()
-      .unwrap()
-      .get(&ghost_name)
-      .unwrap()
-      .voices
-      .get(dialog.scope)
-    {
+    let mut speaker = match speakers.get(dialog.scope) {
       Some(speaker) => speaker.clone(),
       None => first_aid_voice.clone(),
     };
@@ -227,31 +236,36 @@ async fn args_to_predictors(
         speaker = first_aid_voice.clone();
       }
     }
+    let texts;
+    if speak_by_punctuation {
+      texts = split_by_punctuation(dialog.text);
+    } else {
+      texts = vec![dialog.text];
+    }
     let engine = engine_from_port(speaker.port).unwrap();
-    match engine {
-      Engine::CoeiroInkV2 => {
-        predictors.push_back(Box::new(CoeiroinkV2Predictor::new(
-          dialog.text,
-          speaker.speaker_uuid,
-          speaker.style_id,
-        )));
-      }
-      Engine::BouyomiChan => {
-        predictors.push_back(Box::new(BouyomichanPredictor::new(
-          dialog.text,
-          speaker.style_id,
-        )));
-      }
-      Engine::CoeiroInkV1
-      | Engine::VoiceVox
-      | Engine::Lmroid
-      | Engine::ShareVox
-      | Engine::ItVoice => {
-        predictors.push_back(Box::new(VoicevoxFamilyPredictor::new(
-          engine,
-          dialog.text,
-          speaker.style_id,
-        )));
+    for text in texts {
+      match engine {
+        Engine::CoeiroInkV2 => {
+          predictors.push_back(Box::new(CoeiroinkV2Predictor::new(
+            text,
+            speaker.speaker_uuid.clone(),
+            speaker.style_id,
+          )));
+        }
+        Engine::BouyomiChan => {
+          predictors.push_back(Box::new(BouyomichanPredictor::new(text, speaker.style_id)));
+        }
+        Engine::CoeiroInkV1
+        | Engine::VoiceVox
+        | Engine::Lmroid
+        | Engine::ShareVox
+        | Engine::ItVoice => {
+          predictors.push_back(Box::new(VoicevoxFamilyPredictor::new(
+            engine,
+            text,
+            speaker.style_id,
+          )));
+        }
       }
     }
   }

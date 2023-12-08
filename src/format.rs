@@ -5,7 +5,7 @@ pub struct Dialog {
   pub scope: usize,
 }
 
-pub fn split_dialog(src: String, devide_by_lines: bool, split_by_punctuation: bool) -> Vec<Dialog> {
+pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
   let mut s = src.clone();
   s = delete_quick_section(s);
 
@@ -19,17 +19,12 @@ pub fn split_dialog(src: String, devide_by_lines: bool, split_by_punctuation: bo
     r.text = clear_tags(r.text.clone());
   }
 
-  let delims_re = Regex::new(r"[！!?？。]").unwrap();
   let mut result = Vec::new();
   for r in raws {
     if r.text.is_empty() {
       continue;
     }
-    let mut t = r.text.clone();
-    if split_by_punctuation {
-      t = delims_re.replace_all(&t, "$0\u{0}").to_string();
-    }
-    for text in t.split('\u{0}') {
+    for text in r.text.split('\u{0}') {
       if text.is_empty() {
         continue;
       }
@@ -39,7 +34,20 @@ pub fn split_dialog(src: String, devide_by_lines: bool, split_by_punctuation: bo
       });
     }
   }
+  result
+}
 
+pub fn split_by_punctuation(src: String) -> Vec<String> {
+  let delims_re = Regex::new(r"[！!?？。]").unwrap();
+
+  let t = delims_re.replace_all(&src, "$0\u{0}").to_string();
+  let mut result = Vec::new();
+  for text in t.split('\u{0}') {
+    if text.is_empty() {
+      continue;
+    }
+    result.push(text.to_string());
+  }
   result
 }
 
