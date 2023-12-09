@@ -1,23 +1,34 @@
 use shiorust::message::{
   parser::{ParseError, ParseErrorKind},
   parts::*,
-  Parser, Request,
+  Parser,
 };
 use std::str::FromStr;
+use crate::common::CRLF;
 
 pub struct PluginRequest {
-  pub request: Request,
+  pub method: Method,
+  pub version: Version,
+  pub headers: Headers,
+}
+
+impl std::fmt::Display for PluginRequest {
+  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    write!(
+      f,
+      "{} PLUGIN/{}{}{}{}",
+      self.method, self.version, CRLF, self.headers, CRLF
+    )
+  }
 }
 
 impl Parser<PluginRequest, (Method, Version)> for PluginRequest {
   fn parse(request_str: &str) -> Result<PluginRequest, ParseError> {
     let ((method, version), headers) = Self::parse_general(request_str)?;
     Ok(PluginRequest {
-      request: Request {
-        method,
-        version,
-        headers,
-      },
+      method,
+      version,
+      headers,
     })
   }
 

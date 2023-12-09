@@ -1,10 +1,10 @@
 use crate::events::common::*;
+use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::queue::get_queue;
 use crate::variables::{get_global_vars, GhostVoiceInfo};
-use shiorust::message::Request;
 
-pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
+pub fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let msg = refs[4].to_string();
@@ -16,7 +16,7 @@ pub fn on_other_ghost_talk(req: &Request) -> PluginResponse {
   new_response_nocontent()
 }
 
-pub fn on_ghost_boot(req: &Request) -> PluginResponse {
+pub fn on_ghost_boot(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[1].to_string();
   let path = refs[4].to_string();

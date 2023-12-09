@@ -7,10 +7,11 @@ use crate::events::common::*;
 use crate::events::menu::*;
 use crate::events::other_ghost::*;
 use crate::events::periodic::*;
+use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
-use shiorust::message::{parts::*, traits::*, Request};
+use shiorust::message::{parts::*, traits::*};
 
-pub fn handle_request(req: &Request) -> PluginResponse {
+pub fn handle_request(req: &PluginRequest) -> PluginResponse {
   match req.method {
     Method::GET | Method::NOTIFY => (),
     _ => return new_response_nocontent(),
@@ -45,11 +46,11 @@ pub fn handle_request(req: &Request) -> PluginResponse {
   res
 }
 
-pub fn version(_req: &Request) -> PluginResponse {
+pub fn version(_req: &PluginRequest) -> PluginResponse {
   new_response_with_script(String::from(env!("CARGO_PKG_VERSION")), false)
 }
 
-fn get_event(id: &str) -> Option<fn(&Request) -> PluginResponse> {
+fn get_event(id: &str) -> Option<fn(&PluginRequest) -> PluginResponse> {
   match id {
     "version" => Some(version),
     "OnOtherGhostTalk" => Some(on_other_ghost_talk),

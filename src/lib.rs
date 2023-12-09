@@ -1,3 +1,4 @@
+mod common;
 mod engine;
 mod events;
 mod format;
@@ -84,9 +85,8 @@ pub extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
   let s = v.to_utf8_str().unwrap();
 
   let pr = PluginRequest::parse(&s).unwrap();
-  let r = pr.request;
 
-  let response = events::handle_request(&r);
+  let response = events::handle_request(&pr);
 
   let bytes = response.to_string().into_bytes();
   let response_gstr = GStr::clone_from_slice_nofree(&bytes);

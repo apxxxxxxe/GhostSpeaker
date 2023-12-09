@@ -1,10 +1,11 @@
-use shiorust::message::Response;
-
-const CRLF: &str = "\r\n";
+use crate::common::CRLF;
+use shiorust::message::parts::*;
 
 #[derive(Debug)]
 pub struct PluginResponse {
-  pub response: Response,
+  pub version: Version,
+  pub status: Status,
+  pub headers: Headers,
 }
 
 impl std::fmt::Display for PluginResponse {
@@ -12,7 +13,7 @@ impl std::fmt::Display for PluginResponse {
     write!(
       f,
       "PLUGIN/{} {}{}{}{}",
-      self.response.version, self.response.status, CRLF, self.response.headers, CRLF
+      self.version, self.status, CRLF, self.headers, CRLF
     )
   }
 }

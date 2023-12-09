@@ -1,6 +1,7 @@
+use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use encoding_rs::{SHIFT_JIS, UTF_8};
-use shiorust::message::{parts::HeaderName, parts::*, traits::*, Request, Response};
+use shiorust::message::{parts::HeaderName, parts::*, traits::*};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -12,37 +13,32 @@ pub fn new_response() -> PluginResponse {
     String::from("UTF-8"),
   );
   PluginResponse {
-    response: Response {
-      version: Version::V30,
-      status: Status::OK,
-      headers,
-    },
+    version: Version::V20,
+    status: Status::OK,
+    headers,
   }
 }
 
 pub fn new_response_nocontent() -> PluginResponse {
   let mut r = new_response();
-  r.response.status = Status::NoContent;
+  r.status = Status::NoContent;
   r
 }
 
 pub fn new_response_with_script(script: String, _use_translate: bool) -> PluginResponse {
   let mut r = new_response();
-  r.response
-    .headers
-    .insert(HeaderName::from("Script"), script);
+  r.headers.insert(HeaderName::from("Script"), script);
   r
 }
 
 pub fn new_response_with_nobreak(script: String, use_translate: bool) -> PluginResponse {
   let mut r = new_response_with_script(script, use_translate);
-  r.response
-    .headers
+  r.headers
     .insert(HeaderName::from("ScriptOption"), "nobreak".to_string());
   r
 }
 
-pub fn get_references(req: &Request) -> Vec<&str> {
+pub fn get_references(req: &PluginRequest) -> Vec<&str> {
   let mut references: Vec<&str> = Vec::new();
   let mut i = 0;
   loop {

@@ -3,16 +3,16 @@ use crate::engine::{CharacterVoice, DUMMY_VOICE_UUID};
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::player::get_player;
+use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::queue::get_queue;
 use crate::variables::get_global_vars;
-use shiorust::message::Request;
 use std::collections::HashMap;
 
 const DEFAULT_VOICE: &str = "【不明】";
 const NO_VOICE: &str = "無し";
 
-pub fn on_menu_exec(req: &Request) -> PluginResponse {
+pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   let mut characters_info = String::new();
   let mut division_setting = String::from("-");
 
@@ -201,7 +201,7 @@ pub fn on_menu_exec(req: &Request) -> PluginResponse {
   new_response_with_script(m.to_string(), true)
 }
 
-pub fn on_voice_selecting(req: &Request) -> PluginResponse {
+pub fn on_voice_selecting(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs.get(0).unwrap();
   let character_name = refs.get(1).unwrap();
@@ -237,7 +237,7 @@ pub fn on_voice_selecting(req: &Request) -> PluginResponse {
   new_response_with_script(m.to_string(), true)
 }
 
-pub fn on_voice_selected(req: &Request) -> PluginResponse {
+pub fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs.get(0).unwrap();
   let character_index = refs.get(1).unwrap().parse::<usize>().unwrap();
@@ -274,7 +274,7 @@ pub fn on_voice_selected(req: &Request) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_volume_change(req: &Request) -> PluginResponse {
+pub fn on_volume_change(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let volume: f32 = refs.get(0).unwrap().parse().unwrap();
   let vars = get_global_vars();
@@ -287,7 +287,7 @@ pub fn on_volume_change(req: &Request) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_division_setting_changed(req: &Request) -> PluginResponse {
+pub fn on_division_setting_changed(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
@@ -309,7 +309,7 @@ pub fn on_division_setting_changed(req: &Request) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_punctuation_setting_changed(req: &Request) -> PluginResponse {
+pub fn on_punctuation_setting_changed(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
@@ -326,7 +326,7 @@ pub fn on_punctuation_setting_changed(req: &Request) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_player_clear(req: &Request) -> PluginResponse {
+pub fn on_player_clear(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
@@ -342,7 +342,7 @@ pub fn on_player_clear(req: &Request) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_auto_start_toggled(req: &Request) -> PluginResponse {
+pub fn on_auto_start_toggled(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let port = refs[0].parse::<i32>().unwrap();
   let ghost_name = refs[1].to_string();

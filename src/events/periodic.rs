@@ -1,10 +1,10 @@
 use crate::events::common::*;
+use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::system::get_port_opener_path;
 use crate::variables::get_global_vars;
-use shiorust::message::Request;
 
-pub fn on_second_change(_req: &Request) -> PluginResponse {
+pub fn on_second_change(_req: &PluginRequest) -> PluginResponse {
   let vars = get_global_vars();
 
   let last = &vars.volatility.last_connection_status;
