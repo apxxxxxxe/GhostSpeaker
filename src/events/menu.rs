@@ -7,10 +7,34 @@ use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::queue::get_queue;
 use crate::variables::get_global_vars;
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
 const DEFAULT_VOICE: &str = "【不明】";
 const NO_VOICE: &str = "無し";
+
+static ACTIVATED: Lazy<String> = Lazy::new(|| greened("有効"));
+static DEACTIVATED: Lazy<String> = Lazy::new(|| reded("無効"));
+
+fn colored(s: &str, r: u8, g: u8, b: u8) -> String {
+  format!("\\f[color,{},{},{}]{}\\f[color,default]", r, g, b, s)
+}
+
+fn reded(s: &str) -> String {
+  colored(s, 128, 0, 0)
+}
+
+fn greened(s: &str) -> String {
+  colored(s, 0, 128, 0)
+}
+
+fn grayed(s: &str) -> String {
+  colored(s, 128, 128, 128)
+}
+
+fn decorated(s: &str, decoration: &str) -> String {
+  format!("\\f[{},1]{}\\f[{},0]", decoration, s, decoration)
+}
 
 pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   let mut characters_info = String::new();
@@ -29,17 +53,18 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       info.push_str(&format!("{}:\\n    ", c));
     }
     let mut voice = String::from(DEFAULT_VOICE);
-    let mut color = "";
     if let Some(si) = get_global_vars().ghosts_voices.as_ref().unwrap().get(name) {
       let switch: String;
       if si.devide_by_lines {
-        switch = "有効".to_string();
+        switch = ACTIVATED.to_string();
       } else {
-        switch = "無効".to_string();
+        switch = DEACTIVATED.to_string();
       }
       division_setting = format!(
-        "【現在 \\q[{},OnDivisionSettingChanged,{},{}]】\\n",
-        switch, ghost_name, path_for_arg
+        "【現在 \\__q[OnDivisionSettingChanged,{},{}]{}\\__q】\\n",
+        ghost_name,
+        path_for_arg,
+        decorated(&switch, "bold"),
       );
       if let Some(c) = si.voices.get(index) {
         if c.speaker_uuid == DUMMY_VOICE_UUID {
@@ -64,24 +89,22 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
               }
             }
           } else {
-            color = "\\f[color,128,128,128]";
-            voice = format!(
+            voice = grayed(&format!(
               "【使用不可: {}の起動が必要】",
               engine_from_port(c.port).unwrap().name()
-            );
+            ));
           }
         }
       }
     };
     info
       + &format!(
-        "{}\\q[{},OnVoiceSelecting,{},{},{},{}]\\f[color,default]\\n",
-        color,
-        voice,
+        "\\__q[OnVoiceSelecting,{},{},{},{}]{}\\__q\\n",
         ghost_name,
         characters.get(index).unwrap_or(&String::from("")),
         index,
         path_for_arg,
+        decorated(&voice, "bold"),
       )
   };
 
@@ -97,22 +120,16 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     .unwrap_or(&empty);
   for engine in ENGINE_LIST.iter() {
     if speakers_info.contains_key(engine) {
-      engine_status += &format!(
-        "{}: \\f[color,0,128,0]起動中\\f[color,default]",
-        engine.name()
-      );
+      engine_status += &format!("{}: {}", engine.name(), greened("起動中"),);
     } else {
-      engine_status += &format!(
-        "{}: \\f[color,128,128,128]停止中\\f[color,default]",
-        engine.name()
-      );
+      engine_status += &format!("{}: {}", engine.name(), grayed("停止中"),);
     }
     let is_auto_start_string: String;
     if let Some(is_auto_start) = engine_auto_start.get(engine) {
       if *is_auto_start {
-        is_auto_start_string = "\\f[color,0,128,0]有効\\f[color,default]".to_string();
+        is_auto_start_string = format!("{}", decorated(&ACTIVATED, "bold"));
       } else {
-        is_auto_start_string = "\\f[color,128,0,0]無効\\f[color,default]".to_string();
+        is_auto_start_string = format!("{}", decorated(&DEACTIVATED, "bold"));
       }
       engine_status += &format!(
         "\\_l[@0,]\\f[align,right]自動起動: \\__q[OnAutoStartToggled,{},{},{}]{}\\__q\\n",
@@ -123,7 +140,8 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       );
     } else {
       engine_status += &format!(
-        "\\_l[@0,]\\f[align,right]自動起動: \\f[color,128,128,128]設定未完了\\f[color,default]\\n"
+        "\\_l[@0,]\\f[align,right]自動起動: {}\\n",
+        grayed("設定未完了")
       );
     }
   }
@@ -137,40 +155,48 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   let mut volume_changer = String::new();
   if v > unit {
     volume_changer.push_str(&format!(
-      "\\q[<<,OnVolumeChange,-{},{},{}]",
-      unit, refs[1], path_for_arg,
+      "\\__q[OnVolumeChange,-{},{},{}]{}\\__q",
+      unit,
+      refs[1],
+      path_for_arg,
+      decorated("<<", "bold"),
     ));
   }
   volume_changer.push_str(&format!(
     " {:.2} \
-        \\q[>>,OnVolumeChange,{},{},{}]\\n\
-        ",
-    v, unit, refs[1], path_for_arg,
+    \\__q[OnVolumeChange,{},{},{}]{}\\__q\\n\
+    ",
+    v,
+    unit,
+    refs[1],
+    path_for_arg,
+    decorated(">>", "bold"),
   ));
 
   let p = get_global_vars().speak_by_punctuation.unwrap();
   let switch: String;
   if p {
-    switch = "有効".to_string();
+    switch = ACTIVATED.to_string();
   } else {
-    switch = "無効".to_string();
+    switch = DEACTIVATED.to_string();
   }
   let punctuation_changer = format!(
-    "【現在 \\q[{},OnPunctuationSettingChanged,{},{}]】\\n",
-    switch, ghost_name, path_for_arg
+    "【現在 \\__q[OnPunctuationSettingChanged,{},{}]{}\\__q】\\n",
+    ghost_name,
+    path_for_arg,
+    decorated(&switch, "bold"),
   );
 
   let player_clearer: String;
   let player_button_dialog = "再生中の音声を停止";
   if get_player().sink.empty() {
-    player_clearer = format!(
-      "\\![*]\\f[strike,true]{}\\f[strike,default]\\n\\n",
-      player_button_dialog
-    )
+    player_clearer = format!("\\![*]{}\\n\\n", grayed(player_button_dialog))
   } else {
     player_clearer = format!(
-      "\\![*]\\q[{},OnPlayerClear,{},{}]\\n\\n",
-      player_button_dialog, ghost_name, path_for_arg
+      "\\![*]\\__q[OnPlayerClear,{},{}]{}\\__q\\n\\n",
+      ghost_name,
+      path_for_arg,
+      decorated(player_button_dialog, "bold"),
     );
   }
 
