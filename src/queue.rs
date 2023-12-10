@@ -198,17 +198,8 @@ async fn args_to_predictors(
     .get(&ghost_name)
     .unwrap()
     .voices;
-  let contains_bouyomichan = speakers
-    .iter()
-    .find(|s| s.port == Engine::BouyomiChan.port())
-    .is_some();
 
-  let speak_by_punctuation = if contains_bouyomichan {
-    get_global_vars().speak_by_punctuation.unwrap()
-  } else {
-    false
-  };
-
+  let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
   for dialog in split_dialog(text, devide_by_lines) {
     if dialog.text.is_empty() {
       continue;
@@ -237,12 +228,14 @@ async fn args_to_predictors(
       }
     }
     let texts;
-    if speak_by_punctuation {
+    let engine = engine_from_port(speaker.port).unwrap();
+    if speak_by_punctuation && engine != Engine::BouyomiChan {
       texts = split_by_punctuation(dialog.text);
     } else {
+      /* 棒読みちゃんは細切れの恩恵が少ない&
+      読み上げ順がばらばらになることがあるので常にまとめて読み上げる */
       texts = vec![dialog.text];
     }
-    let engine = engine_from_port(speaker.port).unwrap();
     for text in texts {
       match engine {
         Engine::CoeiroInkV2 => {
