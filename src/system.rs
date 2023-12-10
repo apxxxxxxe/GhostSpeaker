@@ -1,8 +1,9 @@
 use crate::engine::Engine;
 use crate::variables::get_global_vars;
 use std::os::windows::process::CommandExt;
+use std::path::Path;
 use std::process::Command;
-use sysinfo::{Pid, ProcessExt, System, SystemExt};
+use sysinfo::{Pid, Process, ProcessExt, System, SystemExt};
 use winapi::um::winbase::CREATE_NO_WINDOW;
 
 pub fn get_port_opener_path(port: String) -> Option<String> {
@@ -26,12 +27,8 @@ pub fn get_port_opener_path(port: String) -> Option<String> {
         match pid_str.parse::<usize>() {
           Ok(pid) => {
             let mut system = System::new_all();
-            system.refresh_all();
-            if let Some(process) = system.process(Pid::from(pid as usize)) {
-              return Some(process.exe().to_str().unwrap().to_string());
-            } else {
-              debug!("PID {} not found", pid);
-            }
+            let proc = extract_parent_process(Pid::from(pid), &mut system).unwrap();
+            return Some(proc.exe().to_str().unwrap().to_string());
           }
           Err(e) => error!("failed to parse pid: {}: {}", pid_str, e),
         }
@@ -42,6 +39,37 @@ pub fn get_port_opener_path(port: String) -> Option<String> {
     eprintln!("エラー: {}", error_str);
   }
   None
+}
+
+// check the file exists on "C:\Windows\*"
+// TODO: better way?
+fn is_os_level_executable(path: &Path) -> bool {
+  path.starts_with("C:\\Windows\\") || path.ends_with("explorer.exe") || path.ends_with("ssp.exe")
+}
+
+fn extract_parent_process(pid: Pid, system: &mut System) -> Option<&Process> {
+  system.refresh_all();
+  if let Some(process) = system.process(pid) {
+    let mut r = process;
+    loop {
+      if let Some(ppid) = r.parent() {
+        if let Some(parent) = system.process(ppid) {
+          if is_os_level_executable(parent.exe()) {
+            break;
+          }
+          r = parent;
+          debug!("update parent: {}", r.name());
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    Some(r)
+  } else {
+    None
+  }
 }
 
 pub fn boot_engine(engine: Engine) -> Result<(), Box<dyn std::error::Error>> {
