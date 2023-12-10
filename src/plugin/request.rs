@@ -1,10 +1,10 @@
+use crate::common::CRLF;
 use shiorust::message::{
   parser::{ParseError, ParseErrorKind},
   parts::*,
   Parser,
 };
 use std::str::FromStr;
-use crate::common::CRLF;
 
 pub struct PluginRequest {
   pub method: Method,
