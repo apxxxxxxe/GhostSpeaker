@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod common;
 mod engine;
 mod events;
