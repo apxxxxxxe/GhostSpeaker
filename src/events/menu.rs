@@ -209,7 +209,7 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       {}\\n\
       {}\\n\
       \\![*]音量調整(共通)\\n    {}\
-      \\![*]句読点ごとにCOIROINKへ送信(共通)\\n    {}\
+      \\![*]句読点ごとに読み上げ(共通)\\n    {}\
       \\![*]改行で一拍おく(ゴースト別)\\n    {}\
       \\n\\q[×,]\
       ",
