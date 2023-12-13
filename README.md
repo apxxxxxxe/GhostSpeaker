@@ -1,6 +1,6 @@
 # 伺かプラグイン「GhostSpeaker」
 
-https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/5e13bf62-1c07-45c9-a5f8-d3ed043b24b0
+https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/3de99b5d-5f54-4d77-83be-60c7cf055dc9
 
 デモ動画（音声がミュートになっていないことを確認してください）
 
@@ -34,16 +34,16 @@ https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/5e13bf62-1c07-45c9-a5f
 ## どうやって使うの？
 プラグインをインストール後、対応する音声合成エンジンを起動してください。例えば、VOICEVOXの場合は`VOICEVOX.exe`を起動します。
 
-![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/839f5241-6e00-46b1-8d53-49dfecce10e2)    
+![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/854f52ee-c1cf-4775-b7af-969f62abed87)  
 エンジンの準備が完了すると、上図のような通知がされます。
 
-![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/480b81e6-9665-4577-9b53-c4c27b23c47c)  
+![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/01f09639-1b1c-451b-92f0-7e440bb85996)  
 また、プラグイン実行時のメニューでエンジンが"起動中"となっていることを確認してください。
 
-![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/d0f8e33b-4958-4c3d-9946-fad84d302fd8)  
-**デフォルトでは読み上げ声質は"無し"となっており、そのままでは読み上げられません。**  
+![image](https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/a7fae01f-1deb-4844-8e05-8141070f6c2f)  
 メニューから、**起動中の**エンジンで利用可能な声質が選択可能です。  
-（起動中のエンジンがない場合、選択可能な声質はありません。）
+- **デフォルトでは読み上げ声質は"無し"となっており、そのままでは読み上げられません。**  
+- 起動中のエンジンがない場合、選択可能な声質はありません。
 
 エンジンの準備が完了し次第、ゴーストの台詞が読み上げられるようになります。
 
