@@ -1,3 +1,6 @@
+[![GhostSpeaker.nar](https://img.shields.io/github/v/release/apxxxxxxe/GhostSpeaker?color=%238a4e4e&label=GhostSpeaker.nar&logo=github)](https://github.com/apxxxxxxe/GhostSpeaker/releases/latest/download/GhostSpeaker.nar)
+[![commits](https://img.shields.io/github/last-commit/apxxxxxxe/GhostSpeaker?color=%238a4e4e&label=%E6%9C%80%E7%B5%82%E6%9B%B4%E6%96%B0&logo=github)](https://github.com/apxxxxxxe/GhostSpeaker/commits/main)
+
 # 伺かプラグイン「GhostSpeaker」
 
 https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/3de99b5d-5f54-4d77-83be-60c7cf055dc9
@@ -51,6 +54,7 @@ https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/3de99b5d-5f54-4d77-83b
 ゴーストのインストールと同様に、本プラグインのnarファイルを起動中のゴーストにドラッグ＆ドロップしてください。  
 
 ## ダウンロード
+[![GhostSpeaker.nar](https://img.shields.io/github/v/release/apxxxxxxe/GhostSpeaker?color=%238a4e4e&label=GhostSpeaker.nar&logo=github)](https://github.com/apxxxxxxe/GhostSpeaker/releases/latest/download/GhostSpeaker.nar) 
 
 ## 設定項目
 
