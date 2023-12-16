@@ -1,0 +1,5 @@
+charset,UTF-8
+type,plugin
+name,GhostSpeaker
+directory,GhostSpeaker
+
