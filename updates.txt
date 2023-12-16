@@ -4,7 +4,8 @@ file,.gitattributes7c66162a68bda33f1af1bb3743a8075asize=52date=2012-12-21T00:
 file,Cargo.lockb914a11f0d303f62afdf51d55f0bdd64size=65812date=2012-12-21T00:00:00
 file,Cargo.tomlec8623c803844cb35bf2a98ce6a96a2csize=1165date=2012-12-21T00:00:00
 file,descript.txt99c242dcdaa42b17421b81a30c2e3198size=788date=2012-12-21T00:00:00
-file,ghost_speaker.dll83ec89c006ffb6f1d3f2e2448bfe6f3csize=4910080date=2012-12-21T00:00:00
+file,ghost_speaker.dllb447a665118d8c02b43edad9699f3daesize=4910080date=2012-12-21T00:00:00
+file,install.txt5bafcf40f649f93a7d5a4dca954165f0size=73date=2012-12-21T00:00:00
 file,readme.txt97b12416fbf79f191d2655ad54a70a47size=2589date=2012-12-21T00:00:00
 file,rustfmt.toml16007b1ed496f90cee02aaf9e18873ddsize=35date=2012-12-21T00:00:00
 file,src/common.rsea465ae5232f29990584d4a941ef59c4size=31date=2012-12-21T00:00:00
