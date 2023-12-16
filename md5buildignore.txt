@@ -1,6 +1,7 @@
 .git
 .github
 .gitignore
+.gitattributes
 .gitmodules
 readme.md
 ReadMe.md
@@ -27,3 +28,7 @@ XtraStuf.mac/
 
 target/
 vars.json
+src/
+Cargo.toml
+Cargo.lock
+rustfmt.toml
