@@ -91,7 +91,7 @@ fn split_dialog_local(src: String) -> Vec<Dialog> {
 
 fn clear_tags(src: String) -> String {
   let sakura_script_re =
-    Regex::new(r###"\\_{0,2}[a-zA-Z0-9*!&](\d|\[("([^"]|\\")+?"|([^\]]|\\\])+?)+?\])?"###).unwrap();
+    Regex::new(r###"\\_{0,2}(w[1-9]|[a-zA-Z0-9*!&\-+](\[("([^"]|\\")+?"|([^\]]|\\\])+?)+?\])?)"###).unwrap();
   sakura_script_re.replace_all(&src.clone(), "").to_string()
 }
 
