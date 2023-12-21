@@ -41,17 +41,12 @@ pub fn new_response_with_nobreak(script: String, use_translate: bool) -> PluginR
 pub fn get_references(req: &PluginRequest) -> Vec<&str> {
   let mut references: Vec<&str> = Vec::new();
   let mut i = 0;
-  loop {
-    match req
-      .headers
-      .get(&HeaderName::from(&format!("Reference{}", i)))
-    {
-      Some(value) => {
-        references.push(value);
-        i += 1;
-      }
-      None => break,
-    }
+  while let Some(value) = req
+    .headers
+    .get(&HeaderName::from(&format!("Reference{}", i)))
+  {
+    references.push(value);
+    i += 1;
   }
   references
 }
@@ -70,21 +65,20 @@ pub fn load_descript(file_path: String) -> HashMap<String, String> {
     .clone()
     .into_owned()
     .as_str()
-    .find("charset,UTF-8")
-    .is_some()
+    .contains("charset,UTF-8")
   {
     result = UTF_8.decode(&buffer).0;
   }
 
   let input_text = result.into_owned();
   for line in input_text.lines() {
-    if line.match_indices(",").count() != 1 {
+    if line.match_indices(',').count() != 1 {
       continue;
     }
-    let mut iter = line.split(",");
+    let mut iter = line.split(',');
     let key = iter.next().unwrap().to_string();
     let mut value = iter.next().unwrap().to_string();
-    while let Some(v) = iter.next() {
+    for v in iter {
       value.push_str(v);
     }
     descript.insert(key, value);
@@ -101,12 +95,8 @@ pub fn count_characters(ghost_description: HashMap<String, String>) -> Vec<Strin
     characters.push(kero.to_string());
   }
   let mut i = 2;
-  loop {
-    if let Some(c) = ghost_description.get(&format!("char{}.name", i)) {
-      characters.push(c.to_string());
-    } else {
-      break;
-    }
+  while let Some(c) = ghost_description.get(&format!("char{}.name", i)) {
+    characters.push(c.to_string());
     i += 1;
   }
   characters

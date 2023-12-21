@@ -119,7 +119,7 @@ pub struct GhostVoiceInfo {
 impl Default for GhostVoiceInfo {
   fn default() -> Self {
     let mut v = Vec::new();
-    v.resize(10, CharacterVoice::default(None));
+    v.resize(10, CharacterVoice::dummy());
     GhostVoiceInfo {
       devide_by_lines: false,
       voices: v,
@@ -130,7 +130,7 @@ impl Default for GhostVoiceInfo {
 impl GhostVoiceInfo {
   pub fn new(character_count: usize) -> Self {
     let mut v = Vec::new();
-    v.resize(character_count, CharacterVoice::default(None));
+    v.resize(character_count, CharacterVoice::dummy());
     GhostVoiceInfo {
       devide_by_lines: false,
       voices: v,

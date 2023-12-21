@@ -4,7 +4,7 @@ pub mod voicevox_family;
 
 use crate::speaker::SpeakerInfo;
 use async_trait::async_trait;
-use bouyomichan::speaker::{BouyomiChanSpeakerGetter, BOUYOMICHAN_UUID};
+use bouyomichan::speaker::BouyomiChanSpeakerGetter;
 use coeiroink_v2::speaker::CoeiroinkV2SpeakerGetter;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -100,50 +100,11 @@ pub struct CharacterVoice {
 }
 
 impl CharacterVoice {
-  pub fn default(engine: Option<Engine>) -> Self {
-    let dummy_voice = CharacterVoice {
+  pub fn dummy() -> Self {
+    Self {
       port: Engine::VoiceVox.port(),
       speaker_uuid: DUMMY_VOICE_UUID.to_string(),
       style_id: -1,
-    };
-
-    match engine {
-      Some(engine) => match engine {
-        Engine::CoeiroInkV2 => {
-          // つくよみちゃん-れいせい
-          CharacterVoice {
-            port: Engine::CoeiroInkV2.port(),
-            speaker_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
-            style_id: 0,
-          }
-        }
-        Engine::CoeiroInkV1 => {
-          // つくよみちゃん-れいせい
-          CharacterVoice {
-            port: Engine::CoeiroInkV1.port(),
-            speaker_uuid: String::from("3c37646f-3881-5374-2a83-149267990abc"),
-            style_id: 0,
-          }
-        }
-        Engine::VoiceVox => {
-          // ずんだもん-ノーマル
-          CharacterVoice {
-            port: Engine::VoiceVox.port(),
-            speaker_uuid: String::from("388f246b-8c41-4ac1-8e2d-5d79f3ff56d9"),
-            style_id: 3,
-          }
-        }
-        Engine::BouyomiChan => {
-          // 棒読みちゃん-女性1
-          CharacterVoice {
-            port: Engine::BouyomiChan.port(),
-            speaker_uuid: BOUYOMICHAN_UUID.to_string(),
-            style_id: 1,
-          }
-        }
-        _ => dummy_voice, // TODO: 他のエンジンのデフォルト声質
-      },
-      None => dummy_voice,
     }
   }
 }

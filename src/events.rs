@@ -17,11 +17,8 @@ pub fn handle_request(req: &PluginRequest) -> PluginResponse {
     _ => return new_response_nocontent(),
   };
 
-  let event_id;
-  match req.headers.get("ID") {
-    Some(id) => {
-      event_id = id;
-    }
+  let event_id = match req.headers.get("ID") {
+    Some(id) => id,
     None => return new_response_nocontent(),
   };
 
@@ -63,6 +60,7 @@ fn get_event(id: &str) -> Option<fn(&PluginRequest) -> PluginResponse> {
     "OnSecondChange" => Some(on_second_change),
     "OnPlayerClear" => Some(on_player_clear),
     "OnAutoStartToggled" => Some(on_auto_start_toggled),
+    "OnCharacterResized" => Some(on_character_resized),
     "OnGhostBoot" => Some(on_ghost_boot),
     _ => None,
   }

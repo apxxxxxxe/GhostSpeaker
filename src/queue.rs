@@ -1,9 +1,7 @@
 use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
-use crate::engine::{
-  engine_from_port, get_speaker_getters, CharacterVoice, Engine, Predictor, DUMMY_VOICE_UUID,
-};
+use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, DUMMY_VOICE_UUID};
 use crate::format::{split_by_punctuation, split_dialog};
 use crate::player::free_player;
 use crate::player::play_wav;
@@ -177,11 +175,6 @@ async fn args_to_predictors(
     return None;
   }
 
-  // エンジン側に声質が存在しない場合、または
-  // descript.txtに記述されていないキャラクターのために
-  // デフォルトの声質を用意する
-  let first_aid_voice = CharacterVoice::default(Some(connected_engines[0]));
-
   debug!("{}", format!("predicting: {}", text));
   let devide_by_lines = get_global_vars()
     .ghosts_voices
@@ -205,9 +198,11 @@ async fn args_to_predictors(
       continue;
     }
 
-    let mut speaker = match speakers.get(dialog.scope) {
+    let speaker = match speakers.get(dialog.scope) {
       Some(speaker) => speaker.clone(),
-      None => first_aid_voice.clone(),
+      None => {
+        continue;
+      }
     };
 
     if speaker.speaker_uuid == DUMMY_VOICE_UUID {
@@ -219,23 +214,22 @@ async fn args_to_predictors(
       .speakers_info
       .get(&(engine_from_port(speaker.port).unwrap()))
     {
-      if speakers_by_engine
+      if !speakers_by_engine
         .iter()
-        .find(|s| s.speaker_uuid == speaker.speaker_uuid)
-        .is_none()
+        .any(|s| s.speaker_uuid == speaker.speaker_uuid)
       {
-        speaker = first_aid_voice.clone();
+        // エンジン側に声質が存在しないならスキップ
+        continue;
       }
     }
-    let texts;
     let engine = engine_from_port(speaker.port).unwrap();
-    if speak_by_punctuation && engine != Engine::BouyomiChan {
-      texts = split_by_punctuation(dialog.text);
+    let texts = if speak_by_punctuation && engine != Engine::BouyomiChan {
+      split_by_punctuation(dialog.text)
     } else {
       /* 棒読みちゃんは細切れの恩恵が少ない&
       読み上げ順がばらばらになることがあるので常にまとめて読み上げる */
-      texts = vec![dialog.text];
-    }
+      vec![dialog.text]
+    };
     for text in texts {
       match engine {
         Engine::CoeiroInkV2 => {
