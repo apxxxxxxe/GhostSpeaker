@@ -81,3 +81,6 @@ https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/3de99b5d-5f54-4d77-83b
 - 音声合成エンジンの実行ファイルのパスがプラグインに保存され、`設定未完了`だった設定項目が`無効`に変わります。
 - `無効`ボタンをクリックして`有効`にすることで、次回以降の起動時に音声合成エンジンが同時に起動するようになります。
 
+## 更新履歴
+各バージョンの更新内容は[こちら](https://github.com/apxxxxxxe/GhostSpeaker/releases)からご確認ください。
+
