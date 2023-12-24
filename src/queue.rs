@@ -3,8 +3,7 @@ use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, DUMMY_VOICE_UUID};
 use crate::format::{split_by_punctuation, split_dialog};
-use crate::player::free_player;
-use crate::player::play_wav;
+use crate::player::{cooperative_free_player, force_free_player, play_wav};
 use crate::variables::get_global_vars;
 use async_std::sync::Arc;
 use std::collections::VecDeque;
@@ -116,7 +115,11 @@ impl Queue {
 
   pub fn stop(&mut self) {
     debug!("{}", "stopping queue");
-    free_player();
+    if get_global_vars().wait_for_speech.unwrap() {
+      cooperative_free_player();
+    } else {
+      force_free_player();
+    }
     if let Some(runtime) = self.runtime.take() {
       runtime.shutdown_background();
       debug!("{}", "shutdown speaker's runtime");

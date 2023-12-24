@@ -33,14 +33,27 @@ impl Player {
   }
 }
 
-pub fn free_player() {
+pub fn force_free_player() {
   debug!("free_player");
   get_player().sink.pause();
   get_player().sink.stop();
   unsafe {
     PLAYER = None;
   }
-  debug!("free_player done");
+  debug!("force_free_player done");
+}
+
+pub fn cooperative_free_player() {
+  debug!("sleep until end");
+  while !get_player().sink.empty() {
+    std::thread::sleep(std::time::Duration::from_millis(100));
+  }
+  get_player().sink.pause();
+  get_player().sink.stop();
+  unsafe {
+    PLAYER = None;
+  }
+  debug!("cooperative_free_player done");
 }
 
 pub fn get_player() -> &'static mut Player {

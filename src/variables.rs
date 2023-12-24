@@ -24,6 +24,9 @@ pub struct GlobalVariables {
   // ゴーストごとの声の情報
   pub ghosts_voices: Option<HashMap<String, GhostVoiceInfo>>,
 
+  // unload時に音声再生の完了を待つかどうか
+  pub wait_for_speech: Option<bool>,
+
   // 起動ごとにリセットされる変数
   #[serde(skip)]
   pub volatility: VolatilityVariables,
@@ -37,6 +40,7 @@ impl GlobalVariables {
       volume: Some(1.0),
       speak_by_punctuation: Some(true),
       ghosts_voices: Some(HashMap::new()),
+      wait_for_speech: Some(true),
       volatility: VolatilityVariables::default(),
     }
   }
@@ -75,6 +79,9 @@ impl GlobalVariables {
     };
     if let Some(g) = vars.ghosts_voices {
       self.ghosts_voices = Some(g);
+    }
+    if let Some(w) = vars.wait_for_speech {
+      self.wait_for_speech = Some(w);
     }
 
     let path = std::path::Path::new(get_global_vars().volatility.dll_dir.as_str()).join(VAR_PATH);
