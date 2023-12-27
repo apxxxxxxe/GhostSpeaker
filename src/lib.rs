@@ -66,7 +66,7 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 
   debug!("load");
 
-  return TRUE;
+  TRUE
 }
 
 #[no_mangle]
@@ -76,17 +76,18 @@ pub extern "cdecl" fn unload() -> BOOL {
 
   debug!("unload");
 
-  return TRUE;
+  TRUE
 }
 
+#[allow(clippy::missing_safety_doc)]
 #[no_mangle]
-pub extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
+pub unsafe extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
   // リクエストの取得
   let v = unsafe { GStr::capture(h, *len as usize) };
 
   let s = v.to_utf8_str().unwrap();
 
-  let pr = PluginRequest::parse(&s).unwrap();
+  let pr = PluginRequest::parse(s).unwrap();
 
   let response = events::handle_request(&pr);
 

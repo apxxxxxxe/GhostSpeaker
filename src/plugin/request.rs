@@ -40,8 +40,8 @@ impl Parser<PluginRequest, (Method, Version)> for PluginRequest {
         return Ok((method, version));
       }
     }
-    return Err(ParseError {
+    Err(ParseError {
       kind: ParseErrorKind::RequestLine,
-    });
+    })
   }
 }

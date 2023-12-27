@@ -152,20 +152,18 @@ fn delete_quick_section(src: String) -> String {
       if let Some(start_point) = get_start_point(&s) {
         let part = &s[..start_point.0];
         println!("add: {}", part);
-        result.push_str(&part);
+        result.push_str(part);
         s = s[start_point.0 + start_point.1..].to_string();
         is_quicksection = true;
       } else {
         result.push_str(&s);
         break;
       }
+    } else if let Some(end_point) = get_end_point(&s) {
+      s = s[end_point.0 + end_point.1..].to_string();
+      is_quicksection = false;
     } else {
-      if let Some(end_point) = get_end_point(&s) {
-        s = s[end_point.0 + end_point.1..].to_string();
-        is_quicksection = false;
-      } else {
-        break;
-      }
+      break;
     }
   }
   result

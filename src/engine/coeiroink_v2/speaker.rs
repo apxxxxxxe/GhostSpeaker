@@ -50,7 +50,7 @@ impl StyleResponse {
   pub fn to_style(&self) -> Style {
     Style {
       style_name: self.style_name.clone(),
-      style_id: self.style_id.clone(),
+      style_id: self.style_id,
     }
   }
 }

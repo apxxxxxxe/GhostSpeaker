@@ -24,7 +24,7 @@ pub fn speak(text: &str, voice: i16, volume: i16) -> Result<(), Box<dyn Error>> 
 
   let mut stream = connect()?;
   stream.write_all(&header)?;
-  stream.write_all(&encoded_text)?;
+  stream.write_all(encoded_text)?;
 
   Ok(())
 }

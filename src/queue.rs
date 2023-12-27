@@ -104,7 +104,7 @@ impl Queue {
           wav = guard.pop_front();
         }
         if let Some(data) = wav {
-          if data.len() != 0 {
+          if !data.is_empty() {
             debug!("{}", format!("play: {}", data.len()));
             play_wav(data);
           }
@@ -173,7 +173,7 @@ async fn args_to_predictors(
     .filter(|(_, v)| **v)
     .map(|(k, _)| *k)
     .collect::<Vec<_>>();
-  if connected_engines.clone().len() == 0 {
+  if connected_engines.clone().is_empty() {
     debug!("no engine connected: skip: {}", text);
     return None;
   }

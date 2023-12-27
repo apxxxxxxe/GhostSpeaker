@@ -8,7 +8,7 @@ use winapi::um::winbase::CREATE_NO_WINDOW;
 
 pub fn get_port_opener_path(port: String) -> Option<String> {
   let output = match Command::new("cmd")
-    .args(&["/C", "netstat -ano | findstr LISTENING | findstr", &port])
+    .args(["/C", "netstat -ano | findstr LISTENING | findstr", &port])
     .creation_flags(CREATE_NO_WINDOW)
     .output()
   {

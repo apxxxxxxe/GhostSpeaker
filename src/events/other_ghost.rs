@@ -23,11 +23,12 @@ pub fn on_ghost_boot(req: &PluginRequest) -> PluginResponse {
   let description = load_descript(path);
   let characters = count_characters(description);
 
-  if let None = get_global_vars()
+  if get_global_vars()
     .ghosts_voices
     .as_ref()
     .unwrap()
     .get(&ghost_name)
+    .is_none()
   {
     get_global_vars()
       .ghosts_voices
