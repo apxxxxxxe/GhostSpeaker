@@ -51,17 +51,13 @@ fn extract_parent_process(pid: Pid, system: &mut System) -> Option<&Process> {
   system.refresh_all();
   if let Some(process) = system.process(pid) {
     let mut r = process;
-    loop {
-      if let Some(ppid) = r.parent() {
-        if let Some(parent) = system.process(ppid) {
-          if is_os_level_executable(parent.exe()) {
-            break;
-          }
-          r = parent;
-          debug!("update parent: {}", r.name());
-        } else {
+    while let Some(ppid) = r.parent() {
+      if let Some(parent) = system.process(ppid) {
+        if is_os_level_executable(parent.exe()) {
           break;
         }
+        r = parent;
+        debug!("update parent: {}", r.name());
       } else {
         break;
       }
@@ -79,7 +75,7 @@ pub fn boot_engine(engine: Engine) -> Result<(), Box<dyn std::error::Error>> {
   // do nothing when already booted
   let mut system = System::new_all();
   system.refresh_all();
-  for (_, process) in system.processes() {
+  for process in system.processes().values() {
     if process.exe().to_str().unwrap() == path {
       return Ok(());
     }

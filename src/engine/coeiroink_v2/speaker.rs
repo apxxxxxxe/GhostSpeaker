@@ -64,17 +64,16 @@ impl SpeakerGetter for CoeiroinkV2SpeakerGetter {
     println!("Requesting speakers info from {}", URL);
 
     debug!("getting speakers info");
-    let body;
-    match reqwest::Client::new().get(URL).send().await {
+    let body: String = match reqwest::Client::new().get(URL).send().await {
       Ok(res) => {
         debug!("get_speakers_info success");
-        body = res.text().await?;
+        res.text().await?
       }
       Err(e) => {
         println!("Failed to get speakers info: {}", e);
         return Err(Box::new(e));
       }
-    }
+    };
     let speakers_responses: Vec<SpeakerResponse> = serde_json::from_str(&body)?;
 
     let mut speakers_info: Vec<SpeakerInfo> = Vec::new();
