@@ -1,4 +1,4 @@
-use crate::engine::{CharacterVoice, Engine};
+use crate::engine::{CharacterVoice, Engine, DUMMY_VOICE_UUID};
 use crate::speaker::SpeakerInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -27,6 +27,9 @@ pub struct GlobalVariables {
   // unload時に音声再生の完了を待つかどうか
   pub wait_for_speech: Option<bool>,
 
+  // 初期声質設定
+  pub initial_voice: CharacterVoice,
+
   // 起動ごとにリセットされる変数
   #[serde(skip)]
   pub volatility: VolatilityVariables,
@@ -41,6 +44,7 @@ impl GlobalVariables {
       speak_by_punctuation: Some(true),
       ghosts_voices: Some(HashMap::new()),
       wait_for_speech: Some(true),
+      initial_voice: CharacterVoice::dummy(),
       volatility: VolatilityVariables::default(),
     }
   }
@@ -56,7 +60,7 @@ impl GlobalVariables {
       }
     };
 
-    let vars: GlobalVariables = match serde_yaml::from_str(&yaml_str) {
+    let mut vars: GlobalVariables = match serde_yaml::from_str(&yaml_str) {
       Ok(v) => v,
       Err(e) => {
         error!("Failed to parse variables. {}", e);
@@ -83,6 +87,7 @@ impl GlobalVariables {
     if let Some(w) = vars.wait_for_speech {
       self.wait_for_speech = Some(w);
     }
+    self.initial_voice = vars.initial_voice;
 
     let path = std::path::Path::new(get_global_vars().volatility.dll_dir.as_str()).join(VAR_PATH);
     debug!("Loaded variables from {}", path.display());
@@ -106,6 +111,22 @@ impl GlobalVariables {
 
     debug!("Saved variables");
   }
+
+  // 互換性のための処理: dummy voiceをNoneに変換する
+  fn update(&mut self) {
+    if let Some(ref mut g) = self.ghosts_voices {
+      for (_, v) in g.iter_mut() {
+        for i in 0..v.voices.len() {
+          let vec = &v.voices;
+          if let Some(voice) = &vec[i] {
+            if voice.speaker_uuid == DUMMY_VOICE_UUID {
+              (vec.to_owned())[i] = None;
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 pub fn get_global_vars() -> &'static mut GlobalVariables {
@@ -120,13 +141,13 @@ pub fn get_global_vars() -> &'static mut GlobalVariables {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GhostVoiceInfo {
   pub devide_by_lines: bool,
-  pub voices: Vec<CharacterVoice>,
+  pub voices: Vec<Option<CharacterVoice>>,
 }
 
 impl Default for GhostVoiceInfo {
   fn default() -> Self {
     let mut v = Vec::new();
-    v.resize(10, CharacterVoice::dummy());
+    v.resize(10, None);
     GhostVoiceInfo {
       devide_by_lines: false,
       voices: v,
@@ -137,7 +158,7 @@ impl Default for GhostVoiceInfo {
 impl GhostVoiceInfo {
   pub fn new(character_count: usize) -> Self {
     let mut v = Vec::new();
-    v.resize(character_count, CharacterVoice::dummy());
+    v.resize(character_count, None);
     GhostVoiceInfo {
       devide_by_lines: false,
       voices: v,
