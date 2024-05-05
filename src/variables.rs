@@ -28,6 +28,7 @@ pub struct GlobalVariables {
   pub wait_for_speech: Option<bool>,
 
   // 初期声質設定
+  #[serde(default)]
   pub initial_voice: CharacterVoice,
 
   // 最終起動時のバージョン
