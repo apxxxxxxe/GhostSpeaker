@@ -1,7 +1,9 @@
 use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
-use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, DUMMY_VOICE_UUID};
+use crate::engine::{
+  engine_from_port, get_speaker_getters, Engine, Predictor, NO_VOICE_UUID,
+};
 use crate::format::{split_by_punctuation, split_dialog};
 use crate::player::{cooperative_free_player, force_free_player, play_wav};
 use crate::variables::get_global_vars;
@@ -196,20 +198,23 @@ async fn args_to_predictors(
     .voices;
 
   let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
+
   for dialog in split_dialog(text, devide_by_lines) {
     if dialog.text.is_empty() {
       continue;
     }
 
+    let initial_speaker = &get_global_vars().initial_voice;
+    debug!("selecting speaker: {}", dialog.scope);
     let speaker = match speakers.get(dialog.scope) {
-      Some(speaker) => speaker.clone(),
-      None => {
-        continue;
-      }
+      Some(speaker) => match speaker {
+        Some(speaker) => speaker.clone(),
+        None => initial_speaker.clone(),
+      },
+      None => initial_speaker.clone(),
     };
 
-    if speaker.speaker_uuid == DUMMY_VOICE_UUID {
-      // 無効な声質ならスキップ
+    if speaker.speaker_uuid == NO_VOICE_UUID {
       continue;
     }
     if let Some(speakers_by_engine) = get_global_vars()
