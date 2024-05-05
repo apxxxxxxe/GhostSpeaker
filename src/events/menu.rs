@@ -1,17 +1,17 @@
-use crate::engine::{engine_from_port, ENGINE_LIST};
-use crate::engine::{CharacterVoice, DUMMY_VOICE_UUID};
+use crate::engine::{engine_from_port, CharacterVoice, Engine, NO_VOICE_UUID, ENGINE_LIST};
 use crate::events::common::load_descript;
 use crate::events::common::*;
-use crate::player::get_player;
-use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::queue::get_queue;
+use crate::speaker::{SpeakerInfo, Style};
 use crate::variables::get_global_vars;
+use crate::{player::get_player, plugin::request::PluginRequest};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
 const DEFAULT_VOICE: &str = "【不明】";
 const NO_VOICE: &str = "無し";
+const UNSET_VOICE: &str = "未設定";
 
 static ACTIVATED: Lazy<String> = Lazy::new(|| greened("有効"));
 static DEACTIVATED: Lazy<String> = Lazy::new(|| reded("無効"));
@@ -209,6 +209,13 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     decorated(&wait_setting, "bold"),
   );
 
+  let default_voice_info = format!(
+    "【現在 \\__q[OnDefaultVoiceSelecting,{},{}]{}\\__q】\\n",
+    ghost_name,
+    path_for_arg,
+    get_voice(&Some(get_global_vars().initial_voice.clone()))
+  );
+
   let m = format!(
     "\
       \\b[2]\\_q\
@@ -221,6 +228,7 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       \\![*]句読点ごとに読み上げ(共通)\\n    {}\
       \\![*]改行で一拍おく(ゴースト別)\\n    {}\
       \\![*]終了時に読み上げが終わるのを待つ(共通)\\n    {}\
+      \\![*]デフォルト声質(共通)\\n    {}\
       \\n\\q[×,]\
       ",
     get_global_vars().volatility.plugin_name,
@@ -233,6 +241,7 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     punctuation_changer,
     division_setting,
     wait_for_speech_changer,
+    default_voice_info,
   );
 
   new_response_with_script(m.to_string(), true)
@@ -244,46 +253,7 @@ fn chara_info(
   index: usize,
   ghost_path: &String,
 ) -> String {
-  let mut voice = String::from(DEFAULT_VOICE);
-  if let Some(si) = get_global_vars()
-    .ghosts_voices
-    .as_ref()
-    .unwrap()
-    .get(ghost_name)
-  {
-    if let Some(c) = si.voices.get(index) {
-      if c.speaker_uuid == DUMMY_VOICE_UUID {
-        voice = NO_VOICE.to_string();
-      } else if let Some(speakers_by_engine) = get_global_vars()
-        .volatility
-        .speakers_info
-        .get(&(engine_from_port(c.port).unwrap()))
-      {
-        if let Some(speaker) = speakers_by_engine
-          .iter()
-          .find(|s| s.speaker_uuid == c.speaker_uuid)
-        {
-          if let Some(style) = speaker
-            .styles
-            .iter()
-            .find(|s| s.style_id.unwrap() == c.style_id)
-          {
-            voice = format!(
-              "{} - {}",
-              speaker.speaker_name,
-              style.style_name.clone().unwrap(),
-            );
-          }
-        }
-      } else {
-        voice = grayed(&format!(
-          "【使用不可: {}の起動が必要】",
-          engine_from_port(c.port).unwrap().name()
-        ));
-      }
-    }
-  };
-
+  let voice = get_voice_from_ghost(ghost_name, index);
   let index_tag = if index < 2 {
     format!("\\\\{}", index)
   } else {
@@ -308,38 +278,121 @@ fn chara_info(
   )
 }
 
+fn get_voice_from_ghost(ghost_name: &String, index: usize) -> String {
+  if let Some(si) = get_global_vars()
+    .ghosts_voices
+    .as_ref()
+    .unwrap()
+    .get(ghost_name)
+  {
+    if let Some(c) = si.voices.get(index) {
+      return get_voice(c);
+    }
+  };
+  UNSET_VOICE.to_string()
+}
+
+fn get_voice(c: &Option<CharacterVoice>) -> String {
+  let c = match c {
+    Some(c) => c,
+    None => return UNSET_VOICE.to_string(),
+  };
+  let mut voice = String::from(DEFAULT_VOICE);
+  if c.speaker_uuid == NO_VOICE_UUID {
+    voice = NO_VOICE.to_string();
+  } else if let Some(speakers_by_engine) = get_global_vars()
+    .volatility
+    .speakers_info
+    .get(&(engine_from_port(c.port).unwrap()))
+  {
+    if let Some(speaker) = speakers_by_engine
+      .iter()
+      .find(|s| s.speaker_uuid == c.speaker_uuid)
+    {
+      if let Some(style) = speaker
+        .styles
+        .iter()
+        .find(|s| s.style_id.unwrap() == c.style_id)
+      {
+        voice = format!(
+          "{} - {}",
+          speaker.speaker_name,
+          style.style_name.clone().unwrap(),
+        );
+      }
+    }
+  } else {
+    voice = grayed(&format!(
+      "【使用不可: {}の起動が必要】",
+      engine_from_port(c.port).unwrap().name()
+    ));
+  }
+  voice
+}
+
+type ListCallback = Box<dyn Fn(&Engine, &SpeakerInfo, &Style) -> String>;
+type DummyCallback = Box<dyn Fn(String, &CharacterVoice) -> String>;
+
+fn list_available_voices(callbacks: (ListCallback, DummyCallback)) -> String {
+  let def = CharacterVoice::no_voice();
+  let mut m = "\\b[2]".to_string();
+  m.push_str(callbacks.1(NO_VOICE.to_string(), &def).as_str());
+  let speakers_info = &get_global_vars().volatility.speakers_info;
+  for (engine, speakers) in speakers_info.iter() {
+    for speaker in speakers.iter() {
+      for style in speaker.styles.iter() {
+        m.push_str(callbacks.0(engine, speaker, style).as_str());
+      }
+    }
+  }
+  m
+}
+
+fn list_callback_for_characters(
+  ghost_name: String,
+  character_index: usize,
+  ghost_path: String,
+) -> (ListCallback, DummyCallback) {
+  let gn = ghost_name.clone();
+  let gp = ghost_path.clone();
+  let list_callback = Box::new(
+    move |engine: &Engine, speaker: &SpeakerInfo, style: &Style| {
+      format!(
+        "\\![*]\\q[{} | {},OnVoiceSelected,{},{},{},{},{},{}]\\n",
+        speaker.speaker_name,
+        style.style_name.as_ref().unwrap(),
+        ghost_name,
+        character_index,
+        engine.port(),
+        speaker.speaker_uuid,
+        style.style_id.unwrap(),
+        ghost_path,
+      )
+    },
+  );
+  let dummy_callback = Box::new(move |voice: String, c: &CharacterVoice| {
+    format!(
+      "\\![*]\\q[{},OnVoiceSelected,{},{},{},{},{},{}]\\n",
+      voice, gn, character_index, c.port, c.speaker_uuid, c.style_id, gp,
+    )
+  });
+  (list_callback, dummy_callback)
+}
+
 pub fn on_voice_selecting(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs.first().unwrap();
   let character_name = refs.get(1).unwrap();
   let character_index = refs.get(2).unwrap().parse::<usize>().unwrap();
   let ghost_path = refs.get(3).unwrap();
-  let speakers_info = &mut get_global_vars().volatility.speakers_info;
 
+  let callback = list_callback_for_characters(
+    ghost_name.to_string(),
+    character_index,
+    ghost_path.to_string(),
+  );
   let mut m = format!("\\C\\c\\b[2]\\_q{}\\n{}\\n", ghost_name, character_name);
-  let def = CharacterVoice::dummy();
-  m.push_str(&format!(
-    "\\![*]\\q[{},OnVoiceSelected,{},{},{},{},{},{}]\\n",
-    NO_VOICE, ghost_name, character_index, def.port, def.speaker_uuid, def.style_id, ghost_path,
-  ));
-  for (engine, speakers) in speakers_info.iter() {
-    for speaker in speakers.iter() {
-      for style in speaker.styles.iter() {
-        m.push_str(&format!(
-          "\\![*]\\q[{} | {},OnVoiceSelected,{},{},{},{},{},{}]\\n",
-          speaker.speaker_name,
-          style.style_name.as_ref().unwrap(),
-          ghost_name,
-          character_index,
-          engine.port(),
-          speaker.speaker_uuid,
-          style.style_id.unwrap(),
-          ghost_path,
-        ));
-      }
-    }
-  }
-
+  m.push_str(list_available_voices(callback).as_str());
   m.push_str("\\n\\q[×,]");
   new_response_with_script(m.to_string(), true)
 }
@@ -367,7 +420,7 @@ pub fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
   {
     let voices = &mut info.voices;
     voices.remove(character_index);
-    voices.insert(character_index, voice)
+    voices.insert(character_index, Some(voice))
   } else {
     // OnGhostBootで設定されているはず
     panic!("Ghost {} not found", ghost_name);
@@ -390,6 +443,71 @@ pub fn on_volume_change(req: &PluginRequest) -> PluginResponse {
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
     vars.volatility.plugin_uuid, refs[1], refs[2]
+  );
+  new_response_with_script(script, false)
+}
+
+fn list_callback_for_defaultvoices(
+  ghost_name: String,
+  ghost_path: String,
+) -> (ListCallback, DummyCallback) {
+  let gn = ghost_name.clone();
+  let gp = ghost_path.clone();
+  let list_callback = Box::new(
+    move |engine: &Engine, speaker: &SpeakerInfo, style: &Style| {
+      format!(
+        "\\![*]\\q[{} | {},OnDefaultVoiceSelected,{},{},{},{},{}]\\n",
+        speaker.speaker_name,
+        style.style_name.as_ref().unwrap(),
+        engine.port(),
+        speaker.speaker_uuid,
+        style.style_id.unwrap(),
+        ghost_name,
+        ghost_path,
+      )
+    },
+  );
+  let dummy_callback = Box::new(move |voice: String, c: &CharacterVoice| {
+    format!(
+      "\\![*]\\q[{},OnDefaultVoiceSelected,{},{},{},{},{}]\\n",
+      voice, c.port, c.speaker_uuid, c.style_id, gn, gp,
+    )
+  });
+  (list_callback, dummy_callback)
+}
+
+pub fn on_default_voice_selecting(req: &PluginRequest) -> PluginResponse {
+  let refs = get_references(req);
+  let ghost_name = refs.first().unwrap();
+  let ghost_path = refs.get(1).unwrap();
+  let callback = list_callback_for_defaultvoices(ghost_name.to_string(), ghost_path.to_string());
+  let mut m = "\\_qデフォルトボイスの設定\\n".to_string();
+  m.push_str(list_available_voices(callback).as_str());
+  m.push_str("\\n\\q[×,]");
+  new_response_with_script(m.to_string(), true)
+}
+
+pub fn on_default_voice_selected(req: &PluginRequest) -> PluginResponse {
+  let refs = get_references(req);
+  let port = refs.first().unwrap();
+  let speaker_uuid = refs.get(1).unwrap();
+  let style_id = refs.get(2).unwrap();
+  let ghost_name = refs.get(3).unwrap();
+  let ghost_path = refs.get(4).unwrap();
+  let path_for_arg = ghost_path.replace('\\', "\\\\");
+
+  let voice = CharacterVoice {
+    port: port.to_string().parse::<i32>().unwrap(),
+    speaker_uuid: speaker_uuid.to_string(),
+    style_id: style_id.to_string().parse::<i32>().unwrap(),
+  };
+
+  get_global_vars().initial_voice = voice;
+  let script = format!(
+    "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+    get_global_vars().volatility.plugin_uuid,
+    ghost_name,
+    path_for_arg
   );
   new_response_with_script(script, false)
 }
@@ -494,7 +612,7 @@ pub fn on_character_resized(req: &PluginRequest) -> PluginResponse {
       for c in characters.iter() {
         new_characters.push(c.clone());
       }
-      new_characters.push(CharacterVoice::dummy());
+      new_characters.push(None);
     }
     CharacterResizeMode::Shrink => {
       if characters.len() > description_characters.len() {

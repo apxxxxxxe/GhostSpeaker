@@ -60,7 +60,7 @@ pub static ENGINE_LIST: Lazy<Vec<Engine>> = Lazy::new(|| {
   ]
 });
 
-pub const DUMMY_VOICE_UUID: &str = "dummy";
+pub const NO_VOICE_UUID: &str = "dummy";
 
 pub fn engine_from_port(port: i32) -> Option<Engine> {
   ENGINE_LIST.iter().find(|e| e.port() == port).cloned()
@@ -100,10 +100,10 @@ pub struct CharacterVoice {
 }
 
 impl CharacterVoice {
-  pub fn dummy() -> Self {
+  pub fn no_voice() -> Self {
     Self {
       port: Engine::VoiceVox.port(),
-      speaker_uuid: DUMMY_VOICE_UUID.to_string(),
+      speaker_uuid: NO_VOICE_UUID.to_string(),
       style_id: -1,
     }
   }
