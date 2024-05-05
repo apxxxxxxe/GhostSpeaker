@@ -1,4 +1,4 @@
-use crate::engine::{engine_from_port, CharacterVoice, Engine, DUMMY_VOICE_UUID, ENGINE_LIST};
+use crate::engine::{engine_from_port, CharacterVoice, Engine, NO_VOICE_UUID, ENGINE_LIST};
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
@@ -298,7 +298,7 @@ fn get_voice(c: &Option<CharacterVoice>) -> String {
     None => return UNSET_VOICE.to_string(),
   };
   let mut voice = String::from(DEFAULT_VOICE);
-  if c.speaker_uuid == DUMMY_VOICE_UUID {
+  if c.speaker_uuid == NO_VOICE_UUID {
     voice = NO_VOICE.to_string();
   } else if let Some(speakers_by_engine) = get_global_vars()
     .volatility
@@ -334,7 +334,7 @@ type ListCallback = Box<dyn Fn(&Engine, &SpeakerInfo, &Style) -> String>;
 type DummyCallback = Box<dyn Fn(String, &CharacterVoice) -> String>;
 
 fn list_available_voices(callbacks: (ListCallback, DummyCallback)) -> String {
-  let def = CharacterVoice::dummy();
+  let def = CharacterVoice::no_voice();
   let mut m = "\\b[2]".to_string();
   m.push_str(callbacks.1(NO_VOICE.to_string(), &def).as_str());
   let speakers_info = &get_global_vars().volatility.speakers_info;

@@ -1,4 +1,4 @@
-use crate::engine::{CharacterVoice, Engine, DUMMY_VOICE_UUID};
+use crate::engine::{CharacterVoice, Engine, NO_VOICE_UUID};
 use crate::speaker::SpeakerInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -47,7 +47,7 @@ impl GlobalVariables {
       speak_by_punctuation: Some(true),
       ghosts_voices: Some(HashMap::new()),
       wait_for_speech: Some(true),
-      initial_voice: CharacterVoice::dummy(),
+      initial_voice: CharacterVoice::no_voice(),
       volatility: VolatilityVariables::default(),
       last_version: None,
     }
@@ -150,7 +150,7 @@ impl GlobalVariables {
         for i in 0..v.voices.len() {
           let vec = &v.voices;
           if let Some(voice) = &vec[i] {
-            if voice.speaker_uuid == DUMMY_VOICE_UUID {
+            if voice.speaker_uuid == NO_VOICE_UUID {
               (vec.to_owned())[i] = None;
             }
           }
