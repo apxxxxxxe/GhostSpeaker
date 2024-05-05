@@ -30,6 +30,9 @@ pub struct GlobalVariables {
   // 初期声質設定
   pub initial_voice: CharacterVoice,
 
+  // 最終起動時のバージョン
+  pub last_version: Option<String>,
+
   // 起動ごとにリセットされる変数
   #[serde(skip)]
   pub volatility: VolatilityVariables,
@@ -46,6 +49,7 @@ impl GlobalVariables {
       wait_for_speech: Some(true),
       initial_voice: CharacterVoice::dummy(),
       volatility: VolatilityVariables::default(),
+      last_version: None,
     }
   }
 
@@ -88,6 +92,33 @@ impl GlobalVariables {
       self.wait_for_speech = Some(w);
     }
     self.initial_voice = vars.initial_voice;
+
+    let mut is_updated = false;
+    match vars.last_version {
+      Some(v) => {
+        if v != env!("CARGO_PKG_VERSION") {
+          info!(
+            "GhostSpeaker has been updated from {} to {}",
+            v,
+            env!("CARGO_PKG_VERSION")
+          );
+          is_updated = true;
+          vars.last_version = Some(env!("CARGO_PKG_VERSION").to_string());
+        }
+      }
+      None => {
+        info!(
+          "GhostSpeaker has been updated to {}",
+          env!("CARGO_PKG_VERSION")
+        );
+        vars.last_version = Some(env!("CARGO_PKG_VERSION").to_string());
+        is_updated = true;
+      }
+    }
+
+    if is_updated {
+      get_global_vars().update();
+    }
 
     let path = std::path::Path::new(get_global_vars().volatility.dll_dir.as_str()).join(VAR_PATH);
     debug!("Loaded variables from {}", path.display());
