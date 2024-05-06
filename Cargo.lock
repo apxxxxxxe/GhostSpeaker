@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "ghost-speaker"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "CreateProcessW",
  "async-std",
