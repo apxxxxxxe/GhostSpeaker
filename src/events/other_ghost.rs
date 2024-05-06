@@ -7,9 +7,10 @@ use crate::variables::{get_global_vars, GhostVoiceInfo};
 pub fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
+  let flags = refs[2].to_string();
   let msg = refs[4].to_string();
 
-  if !msg.is_empty() {
+  if !msg.is_empty() && !flags.contains("plugin-script") {
     get_queue().push_to_prediction(msg.clone(), ghost_name.clone());
   }
 
