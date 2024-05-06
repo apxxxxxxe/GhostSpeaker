@@ -108,7 +108,7 @@ impl GlobalVariables {
     let current_version = env!("CARGO_PKG_VERSION");
     self.last_version = Some(current_version.to_string());
 
-    if is_updated && current_version == "1.0.0" {
+    if is_updated && current_version.starts_with("1.0.") {
       self.update();
     }
 
