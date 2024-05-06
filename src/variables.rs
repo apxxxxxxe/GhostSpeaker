@@ -94,21 +94,14 @@ impl GlobalVariables {
     }
     self.initial_voice = vars.initial_voice;
 
-    let mut is_updated = false;
-    match vars.last_version {
-      Some(v) => {
-        if v != env!("CARGO_PKG_VERSION") {
-          is_updated = true;
-        }
-      }
-      None => {
-        is_updated = true;
-      }
-    }
+    let last_version = vars.last_version;
     let current_version = env!("CARGO_PKG_VERSION");
     self.last_version = Some(current_version.to_string());
 
-    if is_updated && current_version.starts_with("1.0.") {
+    if current_version.starts_with("1.0.")
+      && !last_version.clone().is_some_and(|v| v.starts_with("1.0."))
+      || last_version.is_none()
+    {
       self.update();
     }
 
