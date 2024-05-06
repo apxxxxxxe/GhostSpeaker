@@ -39,17 +39,17 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
   let v = GStr::capture(h, len as usize);
   let s = v.to_utf8_str().unwrap();
 
-  get_global_vars().volatility.dll_dir = s.to_string();
-  get_global_vars().load();
-  get_queue(); // init
-
-  let log_path = Path::new(&get_global_vars().volatility.dll_dir).join("ghost-speaker.log");
+  let log_path = Path::new(&s).join("ghost-speaker.log");
   WriteLogger::init(
     LevelFilter::Debug,
     Config::default(),
     File::create(log_path).unwrap(),
   )
   .unwrap();
+
+  get_global_vars().volatility.dll_dir = s.to_string();
+  get_global_vars().load();
+  get_queue(); // init
 
   panic::set_hook(Box::new(|panic_info| {
     debug!("{}", panic_info);

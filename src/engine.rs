@@ -99,6 +99,12 @@ pub struct CharacterVoice {
   pub style_id: i32,
 }
 
+impl Default for CharacterVoice {
+  fn default() -> Self {
+    CharacterVoice::no_voice()
+  }
+}
+
 impl CharacterVoice {
   pub fn no_voice() -> Self {
     Self {

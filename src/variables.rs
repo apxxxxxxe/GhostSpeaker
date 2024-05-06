@@ -28,6 +28,7 @@ pub struct GlobalVariables {
   pub wait_for_speech: Option<bool>,
 
   // 初期声質設定
+  #[serde(default)]
   pub initial_voice: CharacterVoice,
 
   // 最終起動時のバージョン
@@ -54,7 +55,7 @@ impl GlobalVariables {
   }
 
   pub fn load(&mut self) {
-    let path = std::path::Path::new(get_global_vars().volatility.dll_dir.as_str()).join(VAR_PATH);
+    let path = std::path::Path::new(self.volatility.dll_dir.as_str()).join(VAR_PATH);
     debug!("Loading variables from {}", path.display());
     let yaml_str = match std::fs::read_to_string(path) {
       Ok(s) => s,
@@ -64,7 +65,7 @@ impl GlobalVariables {
       }
     };
 
-    let mut vars: GlobalVariables = match serde_yaml::from_str(&yaml_str) {
+    let vars: GlobalVariables = match serde_yaml::from_str(&yaml_str) {
       Ok(v) => v,
       Err(e) => {
         error!("Failed to parse variables. {}", e);
@@ -97,30 +98,21 @@ impl GlobalVariables {
     match vars.last_version {
       Some(v) => {
         if v != env!("CARGO_PKG_VERSION") {
-          info!(
-            "GhostSpeaker has been updated from {} to {}",
-            v,
-            env!("CARGO_PKG_VERSION")
-          );
           is_updated = true;
-          vars.last_version = Some(env!("CARGO_PKG_VERSION").to_string());
         }
       }
       None => {
-        info!(
-          "GhostSpeaker has been updated to {}",
-          env!("CARGO_PKG_VERSION")
-        );
-        vars.last_version = Some(env!("CARGO_PKG_VERSION").to_string());
         is_updated = true;
       }
     }
+    let current_version = env!("CARGO_PKG_VERSION");
+    self.last_version = Some(current_version.to_string());
 
-    if is_updated {
-      get_global_vars().update();
+    if is_updated && current_version.starts_with("1.0.") {
+      self.update();
     }
 
-    let path = std::path::Path::new(get_global_vars().volatility.dll_dir.as_str()).join(VAR_PATH);
+    let path = std::path::Path::new(self.volatility.dll_dir.as_str()).join(VAR_PATH);
     debug!("Loaded variables from {}", path.display());
   }
 
@@ -145,13 +137,13 @@ impl GlobalVariables {
 
   // 互換性のための処理: dummy voiceをNoneに変換する
   fn update(&mut self) {
-    if let Some(ref mut g) = self.ghosts_voices {
+    debug!("Updating variables");
+    if let Some(g) = self.ghosts_voices.as_mut() {
       for (_, v) in g.iter_mut() {
-        for i in 0..v.voices.len() {
-          let vec = &v.voices;
-          if let Some(voice) = &vec[i] {
-            if voice.speaker_uuid == NO_VOICE_UUID {
-              (vec.to_owned())[i] = None;
+        for voice in v.voices.iter_mut() {
+          if let Some(v) = voice {
+            if v.speaker_uuid == NO_VOICE_UUID {
+              *voice = None;
             }
           }
         }
