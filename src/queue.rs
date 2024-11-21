@@ -254,7 +254,8 @@ async fn args_to_predictors(
         | Engine::VoiceVox
         | Engine::Lmroid
         | Engine::ShareVox
-        | Engine::ItVoice => {
+        | Engine::ItVoice
+        | Engine::AivisSpeech => {
           predictors.push_back(Box::new(VoicevoxFamilyPredictor::new(
             engine,
             text,
