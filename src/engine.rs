@@ -19,6 +19,7 @@ pub enum Engine {
   Lmroid,
   ShareVox,
   ItVoice,
+  AivisSpeech,
   BouyomiChan,
 }
 
@@ -31,6 +32,7 @@ impl Engine {
       Engine::Lmroid => 49973,
       Engine::ShareVox => 50025,
       Engine::ItVoice => 49540,
+      Engine::AivisSpeech => 10101,
       Engine::BouyomiChan => 50001,
     }
   }
@@ -43,6 +45,7 @@ impl Engine {
       Engine::Lmroid => "LMROID",
       Engine::ShareVox => "SHAREVOX",
       Engine::ItVoice => "ITVOICE",
+      Engine::AivisSpeech => "AivisSpeech",
       Engine::BouyomiChan => "棒読みちゃん",
     }
   }
@@ -56,6 +59,7 @@ pub static ENGINE_LIST: Lazy<Vec<Engine>> = Lazy::new(|| {
     Engine::Lmroid,
     Engine::ShareVox,
     Engine::ItVoice,
+    Engine::AivisSpeech,
     Engine::BouyomiChan,
   ]
 });
@@ -83,7 +87,7 @@ fn get_speaker_getter(engine: Engine) -> Box<dyn SpeakerGetter + Send + Sync> {
   match engine {
     Engine::CoeiroInkV2 => Box::new(CoeiroinkV2SpeakerGetter),
     Engine::BouyomiChan => Box::new(BouyomiChanSpeakerGetter),
-    engine => Box::new(VoicevoxFamilySpeakerGetter { engine }),
+    _ => Box::new(VoicevoxFamilySpeakerGetter { engine }),
   }
 }
 

@@ -1,9 +1,7 @@
 use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
-use crate::engine::{
-  engine_from_port, get_speaker_getters, Engine, Predictor, NO_VOICE_UUID,
-};
+use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, NO_VOICE_UUID};
 use crate::format::{split_by_punctuation, split_dialog};
 use crate::player::{cooperative_free_player, force_free_player, play_wav};
 use crate::variables::get_global_vars;
@@ -207,10 +205,13 @@ async fn args_to_predictors(
     let initial_speaker = &get_global_vars().initial_voice;
     debug!("selecting speaker: {}", dialog.scope);
     let speaker = match speakers.get(dialog.scope) {
-      Some(speaker) => match speaker {
-        Some(speaker) => speaker.clone(),
-        None => initial_speaker.clone(),
-      },
+      Some(speaker) => {
+        if let Some(speaker) = speaker {
+          speaker.clone()
+        } else {
+          initial_speaker.clone()
+        }
+      }
       None => initial_speaker.clone(),
     };
 
@@ -254,7 +255,8 @@ async fn args_to_predictors(
         | Engine::VoiceVox
         | Engine::Lmroid
         | Engine::ShareVox
-        | Engine::ItVoice => {
+        | Engine::ItVoice
+        | Engine::AivisSpeech => {
           predictors.push_back(Box::new(VoicevoxFamilyPredictor::new(
             engine,
             text,
