@@ -19,6 +19,7 @@ https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/3de99b5d-5f54-4d77-83b
 - [LMROID](https://lmroidsoftware.wixsite.com/nhoshio)
 - [SHAREVOX](https://www.sharevox.app/)
 - [VOICEVOX](https://voicevox.hiroshiba.jp/)
+- [AivisSpeech](https://aivis-project.com/)
 - [棒読みちゃん](https://chi.usamimi.info/Program/Application/BouyomiChan/)
 
 です。
@@ -31,6 +32,7 @@ https://github.com/apxxxxxxe/GhostSpeaker/assets/39634779/3de99b5d-5f54-4d77-83b
 | ITVOICE      | v0.1.2   |
 | LMROID       | v1.4.0   |
 | SHAREVOX     | v0.2.1   |
+| AivisSpeech  | v1.0.0   |
 | VOICEVOX     | v0.14.10 |
 | 棒読みちゃん | 0.1.10.0 |
 
