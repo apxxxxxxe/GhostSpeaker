@@ -87,7 +87,7 @@ fn get_speaker_getter(engine: Engine) -> Box<dyn SpeakerGetter + Send + Sync> {
   match engine {
     Engine::CoeiroInkV2 => Box::new(CoeiroinkV2SpeakerGetter),
     Engine::BouyomiChan => Box::new(BouyomiChanSpeakerGetter),
-    engine => Box::new(VoicevoxFamilySpeakerGetter { engine }),
+    _ => Box::new(VoicevoxFamilySpeakerGetter { engine }),
   }
 }
 
