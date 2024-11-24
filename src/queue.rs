@@ -4,15 +4,18 @@ use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, NO_VOICE_UUID};
 use crate::format::{split_by_punctuation, split_dialog};
 use crate::player::{cooperative_free_player, force_free_player, play_wav};
+use crate::system::get_port_opener_path;
 use crate::variables::get_global_vars;
 use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::{Mutex, Notify};
+use tokio_util::sync::CancellationToken;
 
 pub static mut QUEUE: Option<Queue> = None;
 
 pub struct Queue {
   runtime: Option<tokio::runtime::Runtime>,
+  cancel_token: Option<CancellationToken>,
   predict_queue: Arc<Mutex<VecDeque<(String, String)>>>,
   predict_notifier: Arc<Notify>,
   play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
@@ -23,6 +26,7 @@ impl Queue {
   pub fn new() -> Self {
     Self {
       runtime: Some(tokio::runtime::Runtime::new().unwrap()),
+      cancel_token: None,
       predict_queue: Arc::new(Mutex::new(VecDeque::new())),
       predict_notifier: Arc::new(Notify::new()),
       play_queue: Arc::new(Mutex::new(VecDeque::new())),
@@ -31,11 +35,19 @@ impl Queue {
   }
 
   pub fn init(&mut self) {
+    self.cancel_token = Some(CancellationToken::new());
     for (engine, getter) in get_speaker_getters() {
+      let token = self.cancel_token.as_ref().unwrap().clone();
       self.runtime.as_mut().unwrap().spawn(async move {
         loop {
           let sinfo = &mut get_global_vars().volatility.speakers_info;
           let connection_status = &mut get_global_vars().volatility.current_connection_status;
+          // ポートが開いていないならスキップ
+          if get_port_opener_path(engine.port()).is_none() {
+            connection_status.insert(engine, false);
+            sinfo.remove(&engine);
+            continue;
+          }
           match getter.get_speakers_info().await {
             Ok(speakers_info) => {
               connection_status.insert(engine, true);
@@ -47,7 +59,12 @@ impl Queue {
               sinfo.remove(&engine);
             }
           }
-          tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+          tokio::select! {
+          _ = token.cancelled() => {
+            break;
+          }
+          _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {}
+          };
         }
       });
     }
@@ -119,6 +136,9 @@ impl Queue {
       cooperative_free_player();
     } else {
       force_free_player();
+    }
+    if let Some(token) = self.cancel_token.take() {
+      token.cancel();
     }
     if let Some(runtime) = self.runtime.take() {
       runtime.shutdown_background();

@@ -6,9 +6,10 @@ use std::process::Command;
 use sysinfo::{Pid, Process, ProcessExt, System, SystemExt};
 use winapi::um::winbase::CREATE_NO_WINDOW;
 
-pub fn get_port_opener_path(port: String) -> Option<String> {
+pub fn get_port_opener_path(port: i32) -> Option<String> {
+  let p = format!("{}", port);
   let output = match Command::new("cmd")
-    .args(["/C", "netstat -ano | findstr LISTENING | findstr", &port])
+    .args(["/C", "netstat -ano | findstr LISTENING | findstr", &p])
     .creation_flags(CREATE_NO_WINDOW)
     .output()
   {

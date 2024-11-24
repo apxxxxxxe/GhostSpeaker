@@ -16,7 +16,7 @@ use crate::queue::get_queue;
 use crate::variables::get_global_vars;
 use shiori_hglobal::*;
 use shiorust::message::Parser;
-use simplelog::*;
+use simplelog::{Config, LevelFilter, WriteLogger};
 use std::fs::File;
 use std::panic;
 use std::path::Path;
@@ -52,7 +52,7 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
   get_queue(); // init
 
   panic::set_hook(Box::new(|panic_info| {
-    debug!("{}", panic_info);
+    debug!("panic: {}", panic_info);
   }));
 
   // autostart enabled engines

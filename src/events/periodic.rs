@@ -17,8 +17,7 @@ pub fn on_second_change(_req: &PluginRequest) -> PluginResponse {
         lines.push(format!("{} が接続されました", k.name()));
 
         // ポートを開いているプロセスのパスを記録
-        let port = format!("{}", k.port());
-        if let Some(path) = get_port_opener_path(port) {
+        if let Some(path) = get_port_opener_path(k.port()) {
           debug!("{}: {}", k.name(), path);
           vars.engine_path.as_mut().unwrap().insert(*k, path);
           let engine_auto_start = vars.engine_auto_start.as_mut().unwrap();
@@ -34,6 +33,7 @@ pub fn on_second_change(_req: &PluginRequest) -> PluginResponse {
 
   vars.volatility.last_connection_status = current.clone();
 
+  // 起動時に一度だけプラグインの更新をチェック
   let update: String;
   if !vars.volatility.is_update_checked {
     update = format!(
@@ -67,6 +67,6 @@ mod test {
 
   #[test]
   fn test_get_pid() {
-    println!("{:?}", get_port_opener_path("50001".to_string()));
+    println!("{:?}", get_port_opener_path(50001));
   }
 }

@@ -83,7 +83,7 @@ pub fn get_speaker_getters() -> HashMap<Engine, Box<dyn SpeakerGetter + Send + S
   map
 }
 
-fn get_speaker_getter(engine: Engine) -> Box<dyn SpeakerGetter + Send + Sync> {
+pub fn get_speaker_getter(engine: Engine) -> Box<dyn SpeakerGetter + Send + Sync> {
   match engine {
     Engine::CoeiroInkV2 => Box::new(CoeiroinkV2SpeakerGetter),
     Engine::BouyomiChan => Box::new(BouyomiChanSpeakerGetter),
