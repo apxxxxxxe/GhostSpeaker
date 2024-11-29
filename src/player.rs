@@ -2,10 +2,7 @@ use crate::variables::get_global_vars;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 use std::io::BufReader;
 use std::io::Cursor;
-use std::sync::Once;
 
-/*
-static INIT: Once = Once::new();
 static mut PLAYER: Option<Player> = None;
 
 pub struct Player {
@@ -59,20 +56,12 @@ pub fn cooperative_free_player() {
   debug!("cooperative_free_player done");
 }
 
-pub fn drop_player() {
-  debug!("drop_player");
-  get_player().sink.pause();
-  get_player().sink.stop();
-  unsafe {
-    PLAYER = None;
-  }
-  debug!("drop_player done");
-}
-
 pub fn get_player() -> &'static mut Player {
-  INIT.call_once(|| unsafe {
-    PLAYER = Some(Player::new());
-  });
+  if unsafe { PLAYER.is_none() } {
+    unsafe {
+      PLAYER = Some(Player::new());
+    }
+  }
   unsafe { PLAYER.as_mut().unwrap() }
 }
 

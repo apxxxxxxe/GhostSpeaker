@@ -2,10 +2,8 @@ use crate::engine::{CharacterVoice, Engine, NO_VOICE_UUID};
 use crate::speaker::SpeakerInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Once;
 
 const VAR_PATH: &str = "vars.yaml";
-static INIT: Once = Once::new();
 static mut GLOBALVARS: Option<GlobalVariables> = None;
 
 #[derive(Serialize, Deserialize)]
@@ -148,10 +146,12 @@ impl GlobalVariables {
 }
 
 pub fn get_global_vars() -> &'static mut GlobalVariables {
-  INIT.call_once(|| unsafe {
-    GLOBALVARS = Some(GlobalVariables::new());
-  });
-  unsafe { GLOBALVARS.as_mut().unwrap() }
+  unsafe {
+    if GLOBALVARS.is_none() {
+      GLOBALVARS = Some(GlobalVariables::new());
+    }
+    GLOBALVARS.as_mut().unwrap()
+  }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
