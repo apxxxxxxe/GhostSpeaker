@@ -4,6 +4,7 @@ use std::io::BufReader;
 use std::io::Cursor;
 use std::sync::Once;
 
+/*
 static INIT: Once = Once::new();
 static mut PLAYER: Option<Player> = None;
 
@@ -95,3 +96,4 @@ pub fn play_wav(wav: Vec<u8>) {
     }
   }
 }
+*/

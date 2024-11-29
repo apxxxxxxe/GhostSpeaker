@@ -1,11 +1,12 @@
-use crate::engine::{engine_from_port, CharacterVoice, Engine, NO_VOICE_UUID, ENGINE_LIST};
+use crate::engine::{engine_from_port, CharacterVoice, Engine, ENGINE_LIST, NO_VOICE_UUID};
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
 use crate::queue::get_queue;
 use crate::speaker::{SpeakerInfo, Style};
 use crate::variables::get_global_vars;
-use crate::{player::get_player, plugin::request::PluginRequest};
+// use crate::{player::get_player, plugin::request::PluginRequest};
+use crate::plugin::request::PluginRequest;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
@@ -186,16 +187,17 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   );
 
   let player_button_dialog = "再生中の音声を停止";
-  let player_clearer = if get_player().sink.empty() {
-    format!("\\![*]{}\\n\\n", grayed(player_button_dialog))
-  } else {
-    format!(
-      "\\![*]\\__q[OnPlayerClear,{},{}]{}\\__q\\n\\n",
-      ghost_name,
-      path_for_arg,
-      decorated(player_button_dialog, "bold"),
-    )
-  };
+  // let player_clearer = if get_player().sink.empty() {
+  //   format!("\\![*]{}\\n\\n", grayed(player_button_dialog))
+  // } else {
+  //   format!(
+  //     "\\![*]\\__q[OnPlayerClear,{},{}]{}\\__q\\n\\n",
+  //     ghost_name,
+  //     path_for_arg,
+  //     decorated(player_button_dialog, "bold"),
+  //   )
+  // };
+  let player_clearer = format!("");
 
   let wait_setting = if get_global_vars().wait_for_speech.unwrap() {
     ACTIVATED.to_string()
@@ -556,7 +558,7 @@ pub fn on_player_clear(req: &PluginRequest) -> PluginResponse {
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
   get_queue().restart();
-  get_player().sink.clear();
+  // get_player().sink.clear();
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
