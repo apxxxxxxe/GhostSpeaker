@@ -12,7 +12,7 @@ mod system;
 mod variables;
 
 use crate::plugin::request::PluginRequest;
-use crate::queue::get_queue;
+use crate::queue::QUEUE;
 use crate::variables::get_global_vars;
 use shiori_hglobal::*;
 use shiorust::message::Parser;
@@ -49,7 +49,8 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 
   get_global_vars().volatility.dll_dir = s.to_string();
   get_global_vars().load();
-  get_queue(); // init
+  let mut queue = QUEUE.lock().unwrap();
+  queue.init();
 
   panic::set_hook(Box::new(|panic_info| {
     debug!("{}", panic_info);
@@ -72,7 +73,8 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
   get_global_vars().save();
-  get_queue().stop();
+  let mut queue = QUEUE.lock().unwrap();
+  queue.stop();
 
   debug!("unload");
 

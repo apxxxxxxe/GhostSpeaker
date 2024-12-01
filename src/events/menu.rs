@@ -1,8 +1,8 @@
-use crate::engine::{engine_from_port, CharacterVoice, Engine, NO_VOICE_UUID, ENGINE_LIST};
+use crate::engine::{engine_from_port, CharacterVoice, Engine, ENGINE_LIST, NO_VOICE_UUID};
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
-use crate::queue::get_queue;
+use crate::queue::QUEUE;
 use crate::speaker::{SpeakerInfo, Style};
 use crate::variables::get_global_vars;
 use crate::{player::get_player, plugin::request::PluginRequest};
@@ -555,8 +555,9 @@ pub fn on_player_clear(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
-  get_queue().restart();
   get_player().sink.clear();
+  let mut queue = QUEUE.lock().unwrap();
+  queue.restart();
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",

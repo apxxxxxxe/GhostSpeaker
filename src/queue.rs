@@ -5,11 +5,13 @@ use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, NO
 use crate::format::{split_by_punctuation, split_dialog};
 use crate::player::{cooperative_free_player, force_free_player, play_wav};
 use crate::variables::get_global_vars;
+use once_cell::sync::Lazy;
+use std::sync::Mutex as StdMutex;
 use async_std::sync::Arc;
 use std::collections::VecDeque;
 use tokio::sync::{Mutex, Notify};
 
-pub static mut QUEUE: Option<Queue> = None;
+pub static QUEUE: Lazy<StdMutex<Queue>> = Lazy::new(|| StdMutex::new(Queue::new()));
 
 pub struct Queue {
   runtime: Option<tokio::runtime::Runtime>,
@@ -76,7 +78,8 @@ impl Queue {
                 match predictor.predict().await {
                   Ok(res) => {
                     debug!("pushing to play");
-                    get_queue().push_to_play(res);
+                    let queue = QUEUE.lock().unwrap();
+                    queue.push_to_play(res);
                   }
                   Err(e) => {
                     debug!("predict failed: {}", e);
@@ -267,15 +270,4 @@ async fn args_to_predictors(
     }
   }
   Some(predictors)
-}
-
-// for singleton
-pub fn get_queue() -> &'static mut Queue {
-  unsafe {
-    if QUEUE.is_none() {
-      QUEUE = Some(Queue::new());
-      QUEUE.as_mut().unwrap().init();
-    }
-    QUEUE.as_mut().unwrap()
-  }
 }

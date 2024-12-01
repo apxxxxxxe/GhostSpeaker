@@ -1,7 +1,7 @@
 use crate::events::common::*;
 use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
-use crate::queue::get_queue;
+use crate::queue::QUEUE;
 use crate::variables::{get_global_vars, GhostVoiceInfo};
 
 pub fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
@@ -11,7 +11,8 @@ pub fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let msg = refs[4].to_string();
 
   if !msg.is_empty() && !flags.contains("plugin-script") {
-    get_queue().push_to_prediction(msg.clone(), ghost_name.clone());
+    let queue = QUEUE.lock().unwrap();
+    queue.push_to_prediction(msg.clone(), ghost_name.clone());
   }
 
   new_response_nocontent()
