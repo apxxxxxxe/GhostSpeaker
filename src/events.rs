@@ -60,7 +60,6 @@ fn get_event(id: &str) -> Option<fn(&PluginRequest) -> PluginResponse> {
     "OnDivisionSettingChanged" => Some(on_division_setting_changed),
     "OnPunctuationSettingChanged" => Some(on_punctuation_setting_changed),
     "OnSecondChange" => Some(on_second_change),
-    "OnPlayerClear" => Some(on_player_clear),
     "OnAutoStartToggled" => Some(on_auto_start_toggled),
     "OnCharacterResized" => Some(on_character_resized),
     "OnPlayerSettingToggled" => Some(on_player_setting_toggled),

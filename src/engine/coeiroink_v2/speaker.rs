@@ -15,10 +15,10 @@ pub struct SpeakerResponse {
   pub styles: Vec<StyleResponse>,
 
   #[serde(rename = "version")]
-  pub version: String,
+  pub _version: String,
 
   #[serde(rename = "base64Portrait")]
-  pub base64_portrait: String,
+  pub _base64_portrait: String,
 }
 
 impl SpeakerResponse {
@@ -40,10 +40,10 @@ pub struct StyleResponse {
   pub style_id: Option<i32>,
 
   #[serde(rename = "base64Icon")]
-  pub base64_icon: Option<String>,
+  pub _base64_icon: Option<String>,
 
   #[serde(rename = "base64Portrait")]
-  pub base64_portrait: Option<String>,
+  pub _base64_portrait: Option<String>,
 }
 
 impl StyleResponse {

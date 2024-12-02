@@ -49,8 +49,6 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 
   get_global_vars().volatility.dll_dir = s.to_string();
   get_global_vars().load();
-  let mut queue = QUEUE.lock().unwrap();
-  queue.init();
 
   panic::set_hook(Box::new(|panic_info| {
     debug!("{}", panic_info);

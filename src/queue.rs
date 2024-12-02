@@ -3,38 +3,42 @@ use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, NO_VOICE_UUID};
 use crate::format::{split_by_punctuation, split_dialog};
-use crate::player::{cooperative_free_player, force_free_player, play_wav};
+use crate::player::play_wav;
 use crate::variables::get_global_vars;
-use once_cell::sync::Lazy;
-use std::sync::Mutex as StdMutex;
 use async_std::sync::Arc;
+use once_cell::sync::Lazy;
 use std::collections::VecDeque;
-use tokio::sync::{Mutex, Notify};
+use std::sync::Mutex as StdMutex;
+use tokio::sync::Mutex;
 
 pub static QUEUE: Lazy<StdMutex<Queue>> = Lazy::new(|| StdMutex::new(Queue::new()));
 
 pub struct Queue {
   runtime: Option<tokio::runtime::Runtime>,
+  speak_handler: Option<tokio::task::JoinHandle<()>>,
+  predict_handler: Option<tokio::task::JoinHandle<()>>,
   predict_queue: Arc<Mutex<VecDeque<(String, String)>>>,
-  predict_notifier: Arc<Notify>,
+  predict_stopper: Arc<Mutex<bool>>,
+  play_handler: Option<tokio::task::JoinHandle<()>>,
   play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
-  play_notifier: Arc<Notify>,
+  play_stopper: Arc<Mutex<bool>>,
 }
 
 impl Queue {
   pub fn new() -> Self {
-    Self {
+    let mut s = Self {
       runtime: Some(tokio::runtime::Runtime::new().unwrap()),
+      speak_handler: None,
+      predict_handler: None,
       predict_queue: Arc::new(Mutex::new(VecDeque::new())),
-      predict_notifier: Arc::new(Notify::new()),
+      predict_stopper: Arc::new(Mutex::new(false)),
+      play_handler: None,
       play_queue: Arc::new(Mutex::new(VecDeque::new())),
-      play_notifier: Arc::new(Notify::new()),
-    }
-  }
+      play_stopper: Arc::new(Mutex::new(false)),
+    };
 
-  pub fn init(&mut self) {
     for (engine, getter) in get_speaker_getters() {
-      self.runtime.as_mut().unwrap().spawn(async move {
+      s.speak_handler = Some(s.runtime.as_mut().unwrap().spawn(async move {
         loop {
           let sinfo = &mut get_global_vars().volatility.speakers_info;
           let connection_status = &mut get_global_vars().volatility.current_connection_status;
@@ -51,15 +55,18 @@ impl Queue {
           }
           tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
-      });
+      }));
     }
 
-    let predict_queue_cln = Arc::clone(&self.predict_queue);
-    let predict_notifier_cln = Arc::clone(&self.predict_notifier);
-    self.runtime.as_mut().unwrap().spawn(async move {
+    let predict_queue_cln = Arc::clone(&s.predict_queue);
+    let predict_stopper_cln = Arc::clone(&s.predict_stopper);
+    s.predict_handler = Some(s.runtime.as_mut().unwrap().spawn(async move {
       loop {
         if predict_queue_cln.lock().await.is_empty() {
-          predict_notifier_cln.notified().await;
+          if *predict_stopper_cln.lock().await {
+            break;
+          }
+          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
           continue;
         }
 
@@ -90,14 +97,18 @@ impl Queue {
           },
         }
       }
-    });
+    }));
 
-    let play_queue_cln = self.play_queue.clone();
-    let play_notifier_cln = self.play_notifier.clone();
-    self.runtime.as_mut().unwrap().spawn(async move {
+    let predict_queue_cln = s.predict_queue.clone();
+    let play_queue_cln = s.play_queue.clone();
+    let play_stopper_cln = s.play_stopper.clone();
+    s.play_handler = Some(s.runtime.as_mut().unwrap().spawn(async move {
       loop {
-        if play_queue_cln.lock().await.is_empty() {
-          play_notifier_cln.notified().await;
+        if play_queue_cln.lock().await.is_empty() && predict_queue_cln.lock().await.is_empty() {
+          if *play_stopper_cln.lock().await {
+            break;
+          }
+          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
           continue;
         }
 
@@ -109,35 +120,60 @@ impl Queue {
         if let Some(data) = wav {
           if !data.is_empty() {
             debug!("{}", format!("play: {}", data.len()));
-            play_wav(data);
+            if let Err(e) = play_wav(data) {
+              error!("play_wav failed: {}", e);
+            };
           }
         }
       }
-    });
+    }));
+    s
   }
 
   pub fn stop(&mut self) {
     debug!("{}", "stopping queue");
-    if get_global_vars().wait_for_speech.unwrap() {
-      cooperative_free_player();
-    } else {
-      force_free_player();
-    }
-    if let Some(runtime) = self.runtime.take() {
-      runtime.shutdown_background();
-      debug!("{}", "shutdown speaker's runtime");
+    {
+      // stop signals
+      futures::executor::block_on(async {
+        if let Some(handler) = &self.speak_handler {
+          handler.abort();
+        }
+        // 音声の再生完了を待ってから終了する
+        *self.predict_stopper.lock().await = true;
+        *self.play_stopper.lock().await = true;
+        loop {
+          std::thread::sleep(std::time::Duration::from_millis(100));
+          {
+            let speak_stopped = if let Some(handler) = &self.speak_handler {
+              handler.is_finished()
+            } else {
+              true
+            };
+            let predict_stopped = if let Some(handler) = &self.predict_handler {
+              handler.is_finished()
+            } else {
+              true
+            };
+            let play_stopped = if let Some(handler) = &self.play_handler {
+              handler.is_finished()
+            } else {
+              true
+            };
+            debug!(
+              "waiting for stop queues. status: {}, {}, {}",
+              speak_stopped, predict_stopped, play_stopped
+            );
+            if speak_stopped && predict_stopped && play_stopped {
+              break;
+            }
+          }
+        }
+      });
     }
     debug!("{}", "stopped queue");
-  }
-
-  // remove all queue and stop running threads
-  pub fn restart(&mut self) {
-    debug!("{}", "restarting queue");
-    self.predict_queue = Arc::new(Mutex::new(VecDeque::new()));
-    self.play_queue = Arc::new(Mutex::new(VecDeque::new()));
-    self.runtime = Some(tokio::runtime::Runtime::new().unwrap());
-    self.init();
-    debug!("{}", "restarted queue");
+    if let Some(runtime) = self.runtime.take() {
+      runtime.shutdown_background();
+    }
   }
 
   pub fn push_to_prediction(&self, text: String, ghost_name: String) {
@@ -150,8 +186,7 @@ impl Queue {
         .await
         .push_back((text, ghost_name));
     });
-    self.predict_notifier.notify_one();
-    debug!("pushed and notified to prediction");
+    debug!("pushed to prediction");
   }
 
   fn push_to_play(&self, data: Vec<u8>) {
@@ -159,8 +194,7 @@ impl Queue {
     futures::executor::block_on(async {
       self.play_queue.lock().await.push_back(data);
     });
-    self.play_notifier.notify_one();
-    debug!("pushed and notified to play");
+    debug!("pushed to play");
   }
 }
 

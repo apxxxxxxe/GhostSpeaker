@@ -2,10 +2,9 @@ use crate::engine::{engine_from_port, CharacterVoice, Engine, ENGINE_LIST, NO_VO
 use crate::events::common::load_descript;
 use crate::events::common::*;
 use crate::plugin::response::PluginResponse;
-use crate::queue::QUEUE;
 use crate::speaker::{SpeakerInfo, Style};
 use crate::variables::get_global_vars;
-use crate::{player::get_player, plugin::request::PluginRequest};
+use crate::plugin::request::PluginRequest;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
@@ -185,18 +184,6 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     decorated(&switch, "bold"),
   );
 
-  let player_button_dialog = "再生中の音声を停止";
-  let player_clearer = if get_player().sink.empty() {
-    format!("\\![*]{}\\n\\n", grayed(player_button_dialog))
-  } else {
-    format!(
-      "\\![*]\\__q[OnPlayerClear,{},{}]{}\\__q\\n\\n",
-      ghost_name,
-      path_for_arg,
-      decorated(player_button_dialog, "bold"),
-    )
-  };
-
   let wait_setting = if get_global_vars().wait_for_speech.unwrap() {
     ACTIVATED.to_string()
   } else {
@@ -221,7 +208,6 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       \\b[2]\\_q\
       \\f[align,center]\\f[size,12]{} v{}\\f[size,default]\\n\\n[half]\\f[align,left]\
       {}\
-      {}\
       {}\\n\
       {}\\n\
       \\![*]音量調整(共通)\\n    {}\
@@ -234,7 +220,6 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     get_global_vars().volatility.plugin_name,
     env!("CARGO_PKG_VERSION"),
     engine_status,
-    player_clearer,
     ghost_name,
     characters_info,
     volume_changer,
@@ -541,23 +526,6 @@ pub fn on_punctuation_setting_changed(req: &PluginRequest) -> PluginResponse {
   if let Some(s) = get_global_vars().speak_by_punctuation {
     get_global_vars().speak_by_punctuation = Some(!s);
   }
-
-  let script = format!(
-    "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    get_global_vars().volatility.plugin_uuid,
-    ghost_name,
-    path_for_arg
-  );
-  new_response_with_script(script, false)
-}
-
-pub fn on_player_clear(req: &PluginRequest) -> PluginResponse {
-  let refs = get_references(req);
-  let ghost_name = refs[0].to_string();
-  let path_for_arg = refs[1].to_string();
-  get_player().sink.clear();
-  let mut queue = QUEUE.lock().unwrap();
-  queue.restart();
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
