@@ -12,7 +12,7 @@ mod system;
 mod variables;
 
 use crate::plugin::request::PluginRequest;
-use crate::queue::QUEUE;
+use crate::queue::{init_queues, stop_queues};
 use crate::system::boot_engine;
 use crate::variables::rawvariables::copy_from_raw;
 use crate::variables::rawvariables::save_variables;
@@ -71,6 +71,8 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
     }
   }
 
+  init_queues();
+
   debug!("load");
 
   TRUE
@@ -79,8 +81,7 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
   save_variables();
-  let mut queue = QUEUE.lock().unwrap();
-  queue.stop();
+  stop_queues();
 
   debug!("unload");
 

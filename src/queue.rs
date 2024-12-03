@@ -13,10 +13,232 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
 
-pub static QUEUE: Lazy<StdMutex<Queue>> = Lazy::new(|| StdMutex::new(Queue::new()));
 pub static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
   Lazy::new(|| StdMutex::new(Vec::new()));
 
+pub static RUNTIME: Lazy<StdMutex<Option<tokio::runtime::Runtime>>> =
+  Lazy::new(|| StdMutex::new(Some(tokio::runtime::Runtime::new().unwrap())));
+pub static SPEAK_HANDLERS: Lazy<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
+  Lazy::new(|| Mutex::new(Vec::new()));
+pub static PREDICT_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
+  Lazy::new(|| Mutex::new(None));
+pub static PREDICT_QUEUE: Lazy<Arc<Mutex<VecDeque<(String, String)>>>> =
+  Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
+pub static PREDICT_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+pub static PLAY_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
+  Lazy::new(|| Mutex::new(None));
+pub static PLAY_QUEUE: Lazy<Arc<Mutex<VecDeque<Vec<u8>>>>> =
+  Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
+pub static PLAY_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+
+fn init_speak_queue() {
+  let mut runtime = RUNTIME.lock().unwrap();
+  let mut speak_handlers = Vec::new();
+  for (engine, getter) in get_speaker_getters() {
+    let handler = runtime.as_mut().unwrap().spawn(async move {
+      loop {
+        match getter.get_speakers_info().await {
+          Ok(speakers_info) => {
+            let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
+            if connection_status.get(&engine).is_none()
+              || connection_status.get(&engine).is_some_and(|v| !*v)
+            {
+              {
+                CONNECTION_DIALOGS
+                  .lock()
+                  .unwrap()
+                  .push(format!("{} が接続されました", engine.name()));
+              }
+              // 接続時、ポートを開いているプロセスのパスを記録
+              if let Some(path) = get_port_opener_path(format!("{}", engine.port())) {
+                ENGINE_PATH.write().unwrap().insert(engine, path);
+                let mut auto_start = ENGINE_AUTO_START.write().await;
+                if auto_start.get(&engine).is_none() {
+                  auto_start.insert(engine, false);
+                }
+              }
+            }
+            connection_status.insert(engine, true);
+            SPEAKERS_INFO.write().await.insert(engine, speakers_info);
+          }
+          Err(e) => {
+            error!("Error: {}", e);
+            let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
+            if connection_status.get(&engine).is_some_and(|v| *v) {
+              CONNECTION_DIALOGS
+                .lock()
+                .unwrap()
+                .push(format!("{} が切断されました", engine.name()));
+            }
+            connection_status.insert(engine, false);
+            SPEAKERS_INFO.write().await.remove(&engine);
+          }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+      }
+    });
+    speak_handlers.push(handler);
+  }
+  futures::executor::block_on(async {
+    *SPEAK_HANDLERS.lock().await = speak_handlers;
+  });
+}
+
+fn init_predict_queue() {
+  let predict_queue_cln = PREDICT_QUEUE.clone();
+  let predict_stopper_cln = PREDICT_STOPPER.clone();
+  let handler = RUNTIME.lock().unwrap().as_mut().unwrap().spawn(async move {
+    loop {
+      {
+        if predict_queue_cln.lock().await.is_empty() {
+          if *predict_stopper_cln.lock().await {
+            break;
+          }
+          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+          continue;
+        }
+      }
+
+      let parg;
+      {
+        let mut guard = predict_queue_cln.lock().await;
+        parg = guard.pop_front();
+      }
+
+      match parg {
+        None => continue,
+        Some(parg) => match args_to_predictors(parg) {
+          None => continue,
+          Some(predictors) => {
+            for predictor in predictors {
+              match predictor.predict().await {
+                Ok(res) => {
+                  debug!("pushing to play");
+                  futures::executor::block_on(async {
+                    PLAY_QUEUE.lock().await.push_back(res);
+                  });
+                  debug!("pushed to play");
+                }
+                Err(e) => {
+                  debug!("predict failed: {}", e);
+                }
+              }
+            }
+          }
+        },
+      }
+    }
+  });
+  futures::executor::block_on(async {
+    *PREDICT_HANDLER.lock().await = Some(handler);
+  });
+}
+
+pub fn init_play_queue() {
+  let play_queue_cln = PLAY_QUEUE.clone();
+  let play_stopper_cln = PLAY_STOPPER.clone();
+  let handler = RUNTIME.lock().unwrap().as_mut().unwrap().spawn(async move {
+    loop {
+      {
+        if play_queue_cln.lock().await.is_empty() {
+          if *play_stopper_cln.lock().await {
+            break;
+          }
+          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+          continue;
+        }
+      }
+
+      let wav;
+      {
+        let mut guard = play_queue_cln.lock().await;
+        wav = guard.pop_front();
+      }
+      if let Some(data) = wav {
+        if !data.is_empty() {
+          debug!("{}", format!("play: {}", data.len()));
+          if let Err(e) = play_wav(data) {
+            error!("play_wav failed: {}", e);
+          };
+        }
+      }
+    }
+  });
+  futures::executor::block_on(async {
+    *PLAY_HANDLER.lock().await = Some(handler);
+  });
+}
+
+pub fn init_queues() {
+  init_speak_queue();
+  init_predict_queue();
+  init_play_queue();
+}
+
+pub fn stop_queues() {
+  debug!("{}", "stopping queue");
+  {
+    // stop signals
+    futures::executor::block_on(async {
+      // speak_handler の停止
+      for handler in SPEAK_HANDLERS.lock().await.iter() {
+        handler.abort();
+      }
+      debug!("{}", "stopped speak");
+      // predict_handler の停止
+      {
+        *PREDICT_STOPPER.lock().await = true;
+      }
+      loop {
+        {
+          let predict_stopped = if let Some(handler) = &*PREDICT_HANDLER.lock().await {
+            handler.is_finished()
+          } else {
+            true
+          };
+          if predict_stopped {
+            break;
+          }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        debug!("{}", "stopping predict");
+      }
+      debug!("{}", "stopped predict");
+      // play_handler の停止
+      {
+        *PLAY_STOPPER.lock().await = true;
+      }
+      loop {
+        {
+          let play_stopped = if let Some(handler) = &*PLAY_HANDLER.lock().await {
+            handler.is_finished()
+          } else {
+            true
+          };
+          if play_stopped {
+            break;
+          }
+          debug!("{}", "stopping play");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+      }
+      debug!("{}", "stopped play");
+    });
+  }
+  debug!("{}", "stopped queue");
+  if let Some(runtime) = RUNTIME.lock().unwrap().take() {
+    runtime.shutdown_background();
+  }
+}
+
+pub fn push_to_prediction(text: String, ghost_name: String) {
+  futures::executor::block_on(async {
+    // 処理が重いので、別スレッドに投げてそっちでPredictorを作る
+    PREDICT_QUEUE.lock().await.push_back((text, ghost_name));
+  });
+}
+
+/*
 pub struct Queue {
   runtime: Option<tokio::runtime::Runtime>,
   speak_handler: Option<tokio::task::JoinHandle<()>>,
@@ -27,7 +249,9 @@ pub struct Queue {
   play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
   play_stopper: Arc<Mutex<bool>>,
 }
+*/
 
+/*
 impl Queue {
   pub fn new() -> Self {
     let mut s = Self {
@@ -90,12 +314,14 @@ impl Queue {
     let predict_stopper_cln = Arc::clone(&s.predict_stopper);
     s.predict_handler = Some(s.runtime.as_mut().unwrap().spawn(async move {
       loop {
-        if predict_queue_cln.lock().await.is_empty() {
-          if *predict_stopper_cln.lock().await {
-            break;
+        {
+          if predict_queue_cln.lock().await.is_empty() {
+            if *predict_stopper_cln.lock().await {
+              break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            continue;
           }
-          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-          continue;
         }
 
         let parg;
@@ -115,6 +341,7 @@ impl Queue {
                     debug!("pushing to play");
                     let queue = QUEUE.lock().unwrap();
                     queue.push_to_play(res);
+                    debug!("pushed to play");
                   }
                   Err(e) => {
                     debug!("predict failed: {}", e);
@@ -127,17 +354,18 @@ impl Queue {
       }
     }));
 
-    let predict_queue_cln = s.predict_queue.clone();
     let play_queue_cln = s.play_queue.clone();
     let play_stopper_cln = s.play_stopper.clone();
     s.play_handler = Some(s.runtime.as_mut().unwrap().spawn(async move {
       loop {
-        if play_queue_cln.lock().await.is_empty() && predict_queue_cln.lock().await.is_empty() {
-          if *play_stopper_cln.lock().await {
-            break;
+        {
+          if play_queue_cln.lock().await.is_empty() {
+            if *play_stopper_cln.lock().await {
+              break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            continue;
           }
-          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-          continue;
         }
 
         let wav;
@@ -163,39 +391,49 @@ impl Queue {
     {
       // stop signals
       futures::executor::block_on(async {
+        // speak_handler の停止
         if let Some(handler) = &self.speak_handler {
           handler.abort();
         }
-        // 音声の再生完了を待ってから終了する
-        *self.predict_stopper.lock().await = true;
-        *self.play_stopper.lock().await = true;
+        debug!("{}", "stopped speak");
+        // predict_handler の停止
+        {
+          *self.predict_stopper.lock().await = true;
+        }
         loop {
-          std::thread::sleep(std::time::Duration::from_millis(100));
           {
-            let speak_stopped = if let Some(handler) = &self.speak_handler {
-              handler.is_finished()
-            } else {
-              true
-            };
             let predict_stopped = if let Some(handler) = &self.predict_handler {
               handler.is_finished()
             } else {
               true
             };
+            if predict_stopped {
+              break;
+            }
+          }
+          std::thread::sleep(std::time::Duration::from_millis(100));
+          debug!("{}", "stopping predict");
+        }
+        debug!("{}", "stopped predict");
+        // play_handler の停止
+        {
+          *self.play_stopper.lock().await = true;
+        }
+        loop {
+          {
             let play_stopped = if let Some(handler) = &self.play_handler {
               handler.is_finished()
             } else {
               true
             };
-            debug!(
-              "waiting for stop queues. status: {}, {}, {}",
-              speak_stopped, predict_stopped, play_stopped
-            );
-            if speak_stopped && predict_stopped && play_stopped {
+            if play_stopped {
               break;
             }
+            debug!("{}", "stopping play");
           }
+          std::thread::sleep(std::time::Duration::from_millis(100));
         }
+        debug!("{}", "stopped play");
       });
     }
     debug!("{}", "stopped queue");
@@ -205,7 +443,6 @@ impl Queue {
   }
 
   pub fn push_to_prediction(&self, text: String, ghost_name: String) {
-    debug!("pushing to prediction");
     futures::executor::block_on(async {
       // 処理が重いので、別スレッドに投げてそっちでPredictorを作る
       self
@@ -214,7 +451,6 @@ impl Queue {
         .await
         .push_back((text, ghost_name));
     });
-    debug!("pushed to prediction");
   }
 
   fn push_to_play(&self, data: Vec<u8>) {
@@ -225,6 +461,7 @@ impl Queue {
     debug!("pushed to play");
   }
 }
+*/
 
 fn args_to_predictors(
   args: (String, String),
