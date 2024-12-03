@@ -4,14 +4,18 @@ use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, NO_VOICE_UUID};
 use crate::format::{split_by_punctuation, split_dialog};
 use crate::player::play_wav;
-use crate::variables::get_global_vars;
-use async_std::sync::Arc;
+use crate::system::get_port_opener_path;
+use crate::variables::GHOSTS_VOICES;
+use crate::variables::*;
 use once_cell::sync::Lazy;
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
 
 pub static QUEUE: Lazy<StdMutex<Queue>> = Lazy::new(|| StdMutex::new(Queue::new()));
+pub static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
+  Lazy::new(|| StdMutex::new(Vec::new()));
 
 pub struct Queue {
   runtime: Option<tokio::runtime::Runtime>,
@@ -40,17 +44,41 @@ impl Queue {
     for (engine, getter) in get_speaker_getters() {
       s.speak_handler = Some(s.runtime.as_mut().unwrap().spawn(async move {
         loop {
-          let sinfo = &mut get_global_vars().volatility.speakers_info;
-          let connection_status = &mut get_global_vars().volatility.current_connection_status;
           match getter.get_speakers_info().await {
             Ok(speakers_info) => {
+              let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
+              if connection_status.get(&engine).is_none()
+                || connection_status.get(&engine).is_some_and(|v| !*v)
+              {
+                {
+                  CONNECTION_DIALOGS
+                    .lock()
+                    .unwrap()
+                    .push(format!("{} が接続されました", engine.name()));
+                }
+                // 接続時、ポートを開いているプロセスのパスを記録
+                if let Some(path) = get_port_opener_path(format!("{}", engine.port())) {
+                  ENGINE_PATH.write().unwrap().insert(engine, path);
+                  let mut auto_start = ENGINE_AUTO_START.write().await;
+                  if auto_start.get(&engine).is_none() {
+                    auto_start.insert(engine, false);
+                  }
+                }
+              }
               connection_status.insert(engine, true);
-              sinfo.insert(engine, speakers_info);
+              SPEAKERS_INFO.write().await.insert(engine, speakers_info);
             }
             Err(e) => {
               error!("Error: {}", e);
+              let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
+              if connection_status.get(&engine).is_some_and(|v| *v) {
+                CONNECTION_DIALOGS
+                  .lock()
+                  .unwrap()
+                  .push(format!("{} が切断されました", engine.name()));
+              }
               connection_status.insert(engine, false);
-              sinfo.remove(&engine);
+              SPEAKERS_INFO.write().await.remove(&engine);
             }
           }
           tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -78,7 +106,7 @@ impl Queue {
 
         match parg {
           None => continue,
-          Some(parg) => match args_to_predictors(parg).await {
+          Some(parg) => match args_to_predictors(parg) {
             None => continue,
             Some(predictors) => {
               for predictor in predictors {
@@ -198,78 +226,80 @@ impl Queue {
   }
 }
 
-async fn args_to_predictors(
+fn args_to_predictors(
   args: (String, String),
 ) -> Option<VecDeque<Box<dyn Predictor + Send + Sync>>> {
   let (text, ghost_name) = args;
   let mut predictors: VecDeque<Box<dyn Predictor + Send + Sync>> = VecDeque::new();
-  let connected_engines = get_global_vars()
-    .volatility
-    .current_connection_status
-    .iter()
-    .filter(|(_, v)| **v)
-    .map(|(k, _)| *k)
-    .collect::<Vec<_>>();
+  let connected_engines = futures::executor::block_on(async {
+    CURRENT_CONNECTION_STATUS
+      .read()
+      .await
+      .clone()
+      .iter()
+      .filter(|(_, v)| **v)
+      .map(|(k, _)| *k)
+      .collect::<Vec<_>>()
+  });
   if connected_engines.clone().is_empty() {
     debug!("no engine connected: skip: {}", text);
     return None;
   }
 
   debug!("{}", format!("predicting: {}", text));
-  let devide_by_lines = get_global_vars()
-    .ghosts_voices
-    .as_ref()
+  let devide_by_lines = GHOSTS_VOICES
+    .read()
     .unwrap()
     .get(&ghost_name)
     .unwrap()
     .devide_by_lines;
 
-  let speakers = &get_global_vars()
-    .ghosts_voices
-    .as_ref()
-    .unwrap()
-    .get(&ghost_name)
-    .unwrap()
-    .voices;
+  let speak_by_punctuation = SPEAK_BY_PUNCTUATION.read().unwrap();
 
-  let speak_by_punctuation = get_global_vars().speak_by_punctuation.unwrap();
-
+  let ghosts_voices = GHOSTS_VOICES.write().unwrap();
+  let speakers = &ghosts_voices.get(&ghost_name).unwrap().voices;
   for dialog in split_dialog(text, devide_by_lines) {
     if dialog.text.is_empty() {
       continue;
     }
 
-    let initial_speaker = &get_global_vars().initial_voice;
+    let initial_speaker = &INITIAL_VOICE.read().unwrap();
     debug!("selecting speaker: {}", dialog.scope);
     let speaker = match speakers.get(dialog.scope) {
       Some(speaker) => {
-        if let Some(speaker) = speaker {
-          speaker.clone()
+        if let Some(sp) = speaker {
+          sp.clone()
         } else {
-          initial_speaker.clone()
+          (*initial_speaker).clone()
         }
       }
-      None => initial_speaker.clone(),
+      None => (*initial_speaker).clone(),
     };
 
     if speaker.speaker_uuid == NO_VOICE_UUID {
       continue;
     }
-    if let Some(speakers_by_engine) = get_global_vars()
-      .volatility
-      .speakers_info
-      .get(&(engine_from_port(speaker.port).unwrap()))
-    {
-      if !speakers_by_engine
-        .iter()
-        .any(|s| s.speaker_uuid == speaker.speaker_uuid)
+    let mut voice_not_found = false;
+    futures::executor::block_on(async {
+      if let Some(speakers_by_engine) = &SPEAKERS_INFO
+        .read()
+        .await
+        .get(&(engine_from_port(speaker.port).unwrap()))
       {
-        // エンジン側に声質が存在しないならスキップ
-        continue;
+        if !speakers_by_engine
+          .iter()
+          .any(|s| s.speaker_uuid == speaker.speaker_uuid)
+        {
+          // エンジン側に声質が存在しないならスキップ
+          voice_not_found = true;
+        }
       }
+    });
+    if voice_not_found {
+      continue;
     }
     let engine = engine_from_port(speaker.port).unwrap();
-    let texts = if speak_by_punctuation && engine != Engine::BouyomiChan {
+    let texts = if *speak_by_punctuation && engine != Engine::BouyomiChan {
       split_by_punctuation(dialog.text)
     } else {
       /* 棒読みちゃんは細切れの恩恵が少ない&

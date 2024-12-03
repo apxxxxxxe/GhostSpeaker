@@ -93,7 +93,9 @@ fn get_speaker_getter(engine: Engine) -> Box<dyn SpeakerGetter + Send + Sync> {
 
 #[async_trait]
 pub trait SpeakerGetter {
-  async fn get_speakers_info(&self) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error>>;
+  async fn get_speakers_info(
+    &self,
+  ) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 #[derive(Clone, Serialize, Deserialize)]

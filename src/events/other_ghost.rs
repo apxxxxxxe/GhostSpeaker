@@ -2,7 +2,7 @@ use crate::events::common::*;
 use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::queue::QUEUE;
-use crate::variables::{get_global_vars, GhostVoiceInfo};
+use crate::variables::*;
 
 pub fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
@@ -25,18 +25,9 @@ pub fn on_ghost_boot(req: &PluginRequest) -> PluginResponse {
   let description = load_descript(path);
   let characters = count_characters(description);
 
-  if get_global_vars()
-    .ghosts_voices
-    .as_ref()
-    .unwrap()
-    .get(&ghost_name)
-    .is_none()
-  {
-    get_global_vars()
-      .ghosts_voices
-      .as_mut()
-      .unwrap()
-      .insert(ghost_name, GhostVoiceInfo::new(characters.len()));
+  let mut ghosts_voices = GHOSTS_VOICES.write().unwrap();
+  if ghosts_voices.get(&ghost_name).is_none() {
+    ghosts_voices.insert(ghost_name, GhostVoiceInfo::new(characters.len()));
   }
 
   new_response_nocontent()

@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::variables::get_global_vars;
+use crate::variables::*;
 use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
@@ -69,8 +69,8 @@ fn extract_parent_process(pid: Pid, system: &mut System) -> Option<&Process> {
 }
 
 pub fn boot_engine(engine: Engine) -> Result<(), Box<dyn std::error::Error>> {
-  let vars = get_global_vars();
-  let path = vars.engine_path.as_ref().unwrap().get(&engine).unwrap();
+  let engine_path = ENGINE_PATH.read().unwrap();
+  let path = engine_path.get(&engine).unwrap();
 
   // do nothing when already booted
   let mut system = System::new_all();

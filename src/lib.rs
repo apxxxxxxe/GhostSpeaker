@@ -13,7 +13,12 @@ mod variables;
 
 use crate::plugin::request::PluginRequest;
 use crate::queue::QUEUE;
-use crate::variables::get_global_vars;
+use crate::system::boot_engine;
+use crate::variables::rawvariables::copy_from_raw;
+use crate::variables::rawvariables::save_variables;
+use crate::variables::rawvariables::RawGlobalVariables;
+use crate::variables::DLL_DIR;
+use crate::variables::ENGINE_AUTO_START;
 use shiori_hglobal::*;
 use shiorust::message::Parser;
 use simplelog::*;
@@ -47,17 +52,20 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
   )
   .unwrap();
 
-  get_global_vars().volatility.dll_dir = s.to_string();
-  get_global_vars().load();
+  let raw_global_vars = RawGlobalVariables::new(s).unwrap();
+  copy_from_raw(&raw_global_vars);
+  *DLL_DIR.write().unwrap() = s.to_string();
 
   panic::set_hook(Box::new(|panic_info| {
     debug!("{}", panic_info);
   }));
 
-  // autostart enabled engines
-  for (engine, auto_start) in get_global_vars().engine_auto_start.as_ref().unwrap() {
+  // 自動起動が設定されているエンジンを起動
+  for (engine, auto_start) in
+    futures::executor::block_on(async { ENGINE_AUTO_START.read().await }).iter()
+  {
     if *auto_start {
-      if let Err(e) = system::boot_engine(*engine) {
+      if let Err(e) = boot_engine(*engine) {
         error!("Failed to boot {}: {}", engine.name(), e);
       }
     }
@@ -70,7 +78,7 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
-  get_global_vars().save();
+  save_variables();
   let mut queue = QUEUE.lock().unwrap();
   queue.stop();
 

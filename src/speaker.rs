@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpeakerInfo {
   pub speaker_name: String,
 
@@ -7,7 +7,7 @@ pub struct SpeakerInfo {
   pub styles: Vec<Style>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Style {
   pub style_name: Option<String>,
 

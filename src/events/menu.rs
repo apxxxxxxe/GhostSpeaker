@@ -1,10 +1,11 @@
 use crate::engine::{engine_from_port, CharacterVoice, Engine, ENGINE_LIST, NO_VOICE_UUID};
 use crate::events::common::load_descript;
 use crate::events::common::*;
+use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::speaker::{SpeakerInfo, Style};
-use crate::variables::get_global_vars;
-use crate::plugin::request::PluginRequest;
+use crate::variables::*;
+use crate::variables::{PLUGIN_NAME, PLUGIN_UUID};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
@@ -59,22 +60,17 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   let ghost_description = load_descript(refs.get(4).unwrap().to_string());
   let characters = count_characters(ghost_description);
   let path_for_arg = refs[4].to_string().replace('\\', "\\\\");
-  let character_voices = &get_global_vars()
-    .ghosts_voices
-    .as_ref()
-    .unwrap()
-    .get(&ghost_name)
-    .unwrap()
-    .voices;
+  debug!("getting ghosts_voices");
+  let ghosts_voices = GHOSTS_VOICES.read().unwrap();
+  let character_voices = &ghosts_voices.get(&ghost_name).unwrap().voices;
+  debug!("success to get ghosts_voices");
 
-  let speakers_info = &mut get_global_vars().volatility.speakers_info;
+  debug!("getting speakers_info");
+  let speakers_info =
+    &mut futures::executor::block_on(async { SPEAKERS_INFO.read().await.clone() });
+  debug!("success to get speakers_info");
 
-  if let Some(si) = get_global_vars()
-    .ghosts_voices
-    .as_ref()
-    .unwrap()
-    .get(&ghost_name)
-  {
+  if let Some(si) = ghosts_voices.get(&ghost_name) {
     let switch = if si.devide_by_lines {
       ACTIVATED.to_string()
     } else {
@@ -89,7 +85,13 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   }
 
   for i in 0..character_voices.len() {
-    characters_info.push_str(&chara_info(&characters, &ghost_name, i, &path_for_arg));
+    characters_info.push_str(&chara_info(
+      &characters,
+      &ghost_name,
+      i,
+      &path_for_arg,
+      &ghosts_voices,
+    ));
   }
   let mut character_resize_buttons = String::new();
   if character_voices.len() > characters.len() {
@@ -111,11 +113,7 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   characters_info.push_str(&format!("【{}】\\n", character_resize_buttons));
 
   let mut engine_status = String::new();
-  let empty = HashMap::new();
-  let engine_auto_start = get_global_vars()
-    .engine_auto_start
-    .as_ref()
-    .unwrap_or(&empty);
+  let engine_auto_start = futures::executor::block_on(async { ENGINE_AUTO_START.read().await });
   for engine in ENGINE_LIST.iter() {
     if speakers_info.contains_key(engine) {
       engine_status += &format!("{}: {}", engine.name(), greened("起動中"),);
@@ -148,10 +146,10 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   }
 
   let unit: f32 = 0.05;
-  let v = get_global_vars().volume.unwrap();
+  let v = VOLUME.read().unwrap();
 
   let mut volume_changer = String::new();
-  if v > unit {
+  if *v > unit {
     volume_changer.push_str(&format!(
       "\\__q[OnVolumeChange,-{},{},{}]{}\\__q",
       unit,
@@ -171,8 +169,8 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     decorated(">>", "bold"),
   ));
 
-  let p = get_global_vars().speak_by_punctuation.unwrap();
-  let switch = if p {
+  let p = SPEAK_BY_PUNCTUATION.read().unwrap();
+  let switch = if *p {
     ACTIVATED.to_string()
   } else {
     DEACTIVATED.to_string()
@@ -184,7 +182,7 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     decorated(&switch, "bold"),
   );
 
-  let wait_setting = if get_global_vars().wait_for_speech.unwrap() {
+  let wait_setting = if *WAIT_FOR_SPEECH.read().unwrap() {
     ACTIVATED.to_string()
   } else {
     DEACTIVATED.to_string()
@@ -200,7 +198,7 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     "【現在 \\__q[OnDefaultVoiceSelecting,{},{}]{}\\__q】\\n",
     ghost_name,
     path_for_arg,
-    get_voice(&Some(get_global_vars().initial_voice.clone()))
+    get_voice(&Some(INITIAL_VOICE.read().unwrap().clone())),
   );
 
   let m = format!(
@@ -217,7 +215,7 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       \\![*]デフォルト声質(共通)\\n    {}\
       \\n\\q[×,]\
       ",
-    get_global_vars().volatility.plugin_name,
+    PLUGIN_NAME,
     env!("CARGO_PKG_VERSION"),
     engine_status,
     ghost_name,
@@ -237,8 +235,9 @@ fn chara_info(
   ghost_name: &String,
   index: usize,
   ghost_path: &String,
+  ghosts_voices: &std::sync::RwLockReadGuard<HashMap<String, GhostVoiceInfo>>,
 ) -> String {
-  let voice = get_voice_from_ghost(ghost_name, index);
+  let voice = get_voice_from_ghost(ghost_name, index, ghosts_voices);
   let index_tag = if index < 2 {
     format!("\\\\{}", index)
   } else {
@@ -263,13 +262,12 @@ fn chara_info(
   )
 }
 
-fn get_voice_from_ghost(ghost_name: &String, index: usize) -> String {
-  if let Some(si) = get_global_vars()
-    .ghosts_voices
-    .as_ref()
-    .unwrap()
-    .get(ghost_name)
-  {
+fn get_voice_from_ghost(
+  ghost_name: &String,
+  index: usize,
+  ghosts_voices: &std::sync::RwLockReadGuard<HashMap<String, GhostVoiceInfo>>,
+) -> String {
+  if let Some(si) = ghosts_voices.get(ghost_name) {
     if let Some(c) = si.voices.get(index) {
       return get_voice(c);
     }
@@ -283,13 +281,10 @@ fn get_voice(c: &Option<CharacterVoice>) -> String {
     None => return UNSET_VOICE.to_string(),
   };
   let mut voice = String::from(DEFAULT_VOICE);
+  let speakers_info = futures::executor::block_on(async { SPEAKERS_INFO.read().await.clone() });
   if c.speaker_uuid == NO_VOICE_UUID {
     voice = NO_VOICE.to_string();
-  } else if let Some(speakers_by_engine) = get_global_vars()
-    .volatility
-    .speakers_info
-    .get(&(engine_from_port(c.port).unwrap()))
-  {
+  } else if let Some(speakers_by_engine) = speakers_info.get(&(engine_from_port(c.port).unwrap())) {
     if let Some(speaker) = speakers_by_engine
       .iter()
       .find(|s| s.speaker_uuid == c.speaker_uuid)
@@ -322,7 +317,7 @@ fn list_available_voices(callbacks: (ListCallback, DummyCallback)) -> String {
   let def = CharacterVoice::no_voice();
   let mut m = "\\b[2]".to_string();
   m.push_str(callbacks.1(NO_VOICE.to_string(), &def).as_str());
-  let speakers_info = &get_global_vars().volatility.speakers_info;
+  let speakers_info = futures::executor::block_on(async { SPEAKERS_INFO.read().await.clone() });
   for (engine, speakers) in speakers_info.iter() {
     for speaker in speakers.iter() {
       for style in speaker.styles.iter() {
@@ -397,12 +392,7 @@ pub fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
     style_id: style_id.to_string().parse::<i32>().unwrap(),
   };
 
-  if let Some(info) = get_global_vars()
-    .ghosts_voices
-    .as_mut()
-    .unwrap()
-    .get_mut(*ghost_name)
-  {
+  if let Some(info) = GHOSTS_VOICES.write().unwrap().get_mut(*ghost_name) {
     let voices = &mut info.voices;
     voices.remove(character_index);
     voices.insert(character_index, Some(voice))
@@ -412,7 +402,7 @@ pub fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
   }
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    get_global_vars().volatility.plugin_uuid,
+    PLUGIN_UUID,
     ghost_name,
     ghost_path.replace('\\', "\\\\")
   );
@@ -422,12 +412,10 @@ pub fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
 pub fn on_volume_change(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let volume: f32 = refs.first().unwrap().parse().unwrap();
-  let vars = get_global_vars();
-  let v = vars.volume.unwrap_or(1.0);
-  vars.volume = Some(v + volume);
+  *VOLUME.write().unwrap() += volume;
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    vars.volatility.plugin_uuid, refs[1], refs[2]
+    PLUGIN_UUID, refs[1], refs[2]
   );
   new_response_with_script(script, false)
 }
@@ -487,12 +475,10 @@ pub fn on_default_voice_selected(req: &PluginRequest) -> PluginResponse {
     style_id: style_id.to_string().parse::<i32>().unwrap(),
   };
 
-  get_global_vars().initial_voice = voice;
+  *INITIAL_VOICE.write().unwrap() = voice;
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    get_global_vars().volatility.plugin_uuid,
-    ghost_name,
-    path_for_arg
+    PLUGIN_UUID, ghost_name, path_for_arg
   );
   new_response_with_script(script, false)
 }
@@ -501,20 +487,13 @@ pub fn on_division_setting_changed(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
-  if let Some(info) = get_global_vars()
-    .ghosts_voices
-    .as_mut()
-    .unwrap()
-    .get_mut(&ghost_name)
-  {
+  if let Some(info) = GHOSTS_VOICES.write().unwrap().get_mut(&ghost_name) {
     info.devide_by_lines = !info.devide_by_lines
   }
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    get_global_vars().volatility.plugin_uuid,
-    ghost_name,
-    path_for_arg
+    PLUGIN_UUID, ghost_name, path_for_arg
   );
   new_response_with_script(script, false)
 }
@@ -523,15 +502,12 @@ pub fn on_punctuation_setting_changed(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
-  if let Some(s) = get_global_vars().speak_by_punctuation {
-    get_global_vars().speak_by_punctuation = Some(!s);
-  }
+  let mut sbp = SPEAK_BY_PUNCTUATION.write().unwrap();
+  *sbp = !*sbp;
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    get_global_vars().volatility.plugin_uuid,
-    ghost_name,
-    path_for_arg
+    PLUGIN_UUID, ghost_name, path_for_arg
   );
   new_response_with_script(script, false)
 }
@@ -543,20 +519,15 @@ pub fn on_auto_start_toggled(req: &PluginRequest) -> PluginResponse {
   let path_for_arg = refs[2].to_string();
 
   let engine = engine_from_port(port).unwrap();
-  if let Some(auto_start) = get_global_vars()
-    .engine_auto_start
-    .as_mut()
-    .unwrap()
-    .get_mut(&engine)
+  if let Some(auto_start) =
+    futures::executor::block_on(async { ENGINE_AUTO_START.write().await }).get_mut(&engine)
   {
     *auto_start = !*auto_start;
   }
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    get_global_vars().volatility.plugin_uuid,
-    ghost_name,
-    path_for_arg
+    PLUGIN_UUID, ghost_name, path_for_arg
   );
   new_response_with_script(script, false)
 }
@@ -567,9 +538,8 @@ pub fn on_character_resized(req: &PluginRequest) -> PluginResponse {
   let ghost_path = refs[1].to_string();
   let mode: usize = refs[2].parse().unwrap();
   let description_characters = count_characters(load_descript(ghost_path.clone()));
-  let characters = get_global_vars()
-    .ghosts_voices
-    .as_mut()
+  let characters = GHOSTS_VOICES
+    .write()
     .unwrap()
     .get(&ghost_name)
     .unwrap()
@@ -595,9 +565,8 @@ pub fn on_character_resized(req: &PluginRequest) -> PluginResponse {
       }
     }
   }
-  get_global_vars()
-    .ghosts_voices
-    .as_mut()
+  GHOSTS_VOICES
+    .write()
     .unwrap()
     .get_mut(&ghost_name)
     .unwrap()
@@ -605,9 +574,7 @@ pub fn on_character_resized(req: &PluginRequest) -> PluginResponse {
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    get_global_vars().volatility.plugin_uuid,
-    ghost_name,
-    ghost_path
+    PLUGIN_UUID, ghost_name, ghost_path
   );
   new_response_with_script(script, false)
 }
@@ -617,13 +584,12 @@ pub fn on_player_setting_toggled(req: &PluginRequest) -> PluginResponse {
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
 
-  get_global_vars().wait_for_speech = Some(!get_global_vars().wait_for_speech.unwrap());
+  let mut wait_for_speech = WAIT_FOR_SPEECH.write().unwrap();
+  *wait_for_speech = !*wait_for_speech;
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    get_global_vars().volatility.plugin_uuid,
-    ghost_name,
-    path_for_arg
+    PLUGIN_UUID, ghost_name, path_for_arg
   );
   new_response_with_script(script, false)
 }

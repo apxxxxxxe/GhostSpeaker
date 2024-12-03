@@ -1,4 +1,4 @@
-use crate::variables::get_global_vars;
+use crate::variables::*;
 use once_cell::sync::Lazy;
 use rodio::{Decoder, OutputStream, Sink};
 use std::io::BufReader;
@@ -10,7 +10,7 @@ pub static FORCE_STOP_SINK: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 pub fn play_wav(wav: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
   let (_stream, handle) = OutputStream::try_default()?;
   let sink = Sink::try_new(&handle)?;
-  sink.set_volume(get_global_vars().volume.unwrap_or(1.0));
+  sink.set_volume(*VOLUME.read().unwrap());
   let file = BufReader::new(Cursor::new(wav));
   match Decoder::new(file) {
     Ok(source) => {
