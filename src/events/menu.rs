@@ -182,18 +182,6 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     decorated(&switch, "bold"),
   );
 
-  let wait_setting = if *WAIT_FOR_SPEECH.read().unwrap() {
-    ACTIVATED.to_string()
-  } else {
-    DEACTIVATED.to_string()
-  };
-  let wait_for_speech_changer = format!(
-    "【現在 \\__q[OnPlayerSettingToggled,{},{}]{}\\__q】\\n",
-    ghost_name,
-    path_for_arg,
-    decorated(&wait_setting, "bold"),
-  );
-
   let default_voice_info = format!(
     "【現在 \\__q[OnDefaultVoiceSelecting,{},{}]{}\\__q】\\n",
     ghost_name,
@@ -211,7 +199,6 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       \\![*]音量調整(共通)\\n    {}\
       \\![*]句読点ごとに読み上げ(共通)\\n    {}\
       \\![*]改行で一拍おく(ゴースト別)\\n    {}\
-      \\![*]終了時に読み上げが終わるのを待つ(共通)\\n    {}\
       \\![*]デフォルト声質(共通)\\n    {}\
       \\n\\q[×,]\
       ",
@@ -223,7 +210,6 @@ pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     volume_changer,
     punctuation_changer,
     division_setting,
-    wait_for_speech_changer,
     default_voice_info,
   );
 
@@ -575,21 +561,6 @@ pub fn on_character_resized(req: &PluginRequest) -> PluginResponse {
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
     PLUGIN_UUID, ghost_name, ghost_path
-  );
-  new_response_with_script(script, false)
-}
-
-pub fn on_player_setting_toggled(req: &PluginRequest) -> PluginResponse {
-  let refs = get_references(req);
-  let ghost_name = refs[0].to_string();
-  let path_for_arg = refs[1].to_string();
-
-  let mut wait_for_speech = WAIT_FOR_SPEECH.write().unwrap();
-  *wait_for_speech = !*wait_for_speech;
-
-  let script = format!(
-    "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
-    PLUGIN_UUID, ghost_name, path_for_arg
   );
   new_response_with_script(script, false)
 }

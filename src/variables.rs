@@ -20,7 +20,6 @@ pub static VOLUME: Lazy<RwLock<f32>> = Lazy::new(|| RwLock::new(1.0));
 pub static SPEAK_BY_PUNCTUATION: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
 pub static GHOSTS_VOICES: Lazy<RwLock<HashMap<String, GhostVoiceInfo>>> =
   Lazy::new(|| RwLock::new(HashMap::new()));
-pub static WAIT_FOR_SPEECH: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(true));
 pub static INITIAL_VOICE: Lazy<RwLock<CharacterVoice>> =
   Lazy::new(|| RwLock::new(CharacterVoice::no_voice()));
 pub static LAST_VERSION: Lazy<RwLock<String>> = Lazy::new(|| RwLock::new(String::new()));

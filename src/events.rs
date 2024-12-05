@@ -62,7 +62,6 @@ fn get_event(id: &str) -> Option<fn(&PluginRequest) -> PluginResponse> {
     "OnSecondChange" => Some(on_second_change),
     "OnAutoStartToggled" => Some(on_auto_start_toggled),
     "OnCharacterResized" => Some(on_character_resized),
-    "OnPlayerSettingToggled" => Some(on_player_setting_toggled),
     "OnGhostBoot" => Some(on_ghost_boot),
     _ => None,
   }

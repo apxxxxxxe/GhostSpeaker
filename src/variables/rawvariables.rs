@@ -1,7 +1,7 @@
 use crate::engine::{CharacterVoice, Engine, NO_VOICE_UUID};
 use crate::variables::{
   GhostVoiceInfo, ENGINE_AUTO_START, ENGINE_PATH, GHOSTS_VOICES, INITIAL_VOICE, LAST_VERSION,
-  SPEAK_BY_PUNCTUATION, VAR_PATH, VOLUME, WAIT_FOR_SPEECH,
+  SPEAK_BY_PUNCTUATION, VAR_PATH, VOLUME
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -34,9 +34,6 @@ pub fn copy_from_raw(raw: &RawGlobalVariables) {
   if let Some(gv) = raw.ghosts_voices.clone() {
     *GHOSTS_VOICES.write().unwrap() = gv;
   }
-  if let Some(w) = raw.wait_for_speech {
-    *WAIT_FOR_SPEECH.write().unwrap() = w;
-  }
   *INITIAL_VOICE.write().unwrap() = raw.initial_voice.clone();
   if let Some(lv) = raw.last_version.clone() {
     *LAST_VERSION.write().unwrap() = lv;
@@ -53,7 +50,6 @@ pub fn save_variables() {
     volume: Some(*VOLUME.read().unwrap()),
     speak_by_punctuation: Some(*SPEAK_BY_PUNCTUATION.read().unwrap()),
     ghosts_voices: Some(GHOSTS_VOICES.read().unwrap().clone()),
-    wait_for_speech: Some(*WAIT_FOR_SPEECH.read().unwrap()),
     initial_voice: INITIAL_VOICE.read().unwrap().clone(),
     last_version: LAST_VERSION.read().unwrap().clone().into(),
   };
@@ -79,9 +75,6 @@ pub struct RawGlobalVariables {
   // ゴーストごとの声の情報
   pub ghosts_voices: Option<HashMap<String, GhostVoiceInfo>>,
 
-  // unload時に音声再生の完了を待つかどうか
-  pub wait_for_speech: Option<bool>,
-
   // 初期声質設定
   #[serde(default)]
   pub initial_voice: CharacterVoice,
@@ -98,7 +91,6 @@ impl RawGlobalVariables {
       volume: Some(1.0),
       speak_by_punctuation: Some(true),
       ghosts_voices: Some(HashMap::new()),
-      wait_for_speech: Some(true),
       initial_voice: CharacterVoice::no_voice(),
       last_version: None,
     };
@@ -130,9 +122,6 @@ impl RawGlobalVariables {
     };
     if let Some(gv) = vars.ghosts_voices {
       g.ghosts_voices = Some(gv);
-    }
-    if let Some(w) = vars.wait_for_speech {
-      g.wait_for_speech = Some(w);
     }
     g.initial_voice = vars.initial_voice;
 
