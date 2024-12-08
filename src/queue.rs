@@ -37,41 +37,44 @@ fn init_speak_queue() {
   for (engine, getter) in get_speaker_getters() {
     let handler = runtime.as_mut().unwrap().spawn(async move {
       loop {
-        match getter.get_speakers_info().await {
-          Ok(speakers_info) => {
-            let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
-            if connection_status.get(&engine).is_none()
-              || connection_status.get(&engine).is_some_and(|v| !*v)
-            {
+        if let Some(port_opener_path) = get_port_opener_path(format!("{}", engine.port())) {
+          match getter.get_speakers_info().await {
+            Ok(speakers_info) => {
+              let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
+              if connection_status.get(&engine).is_none()
+                || connection_status.get(&engine).is_some_and(|v| !*v)
               {
-                CONNECTION_DIALOGS
-                  .lock()
+                {
+                  CONNECTION_DIALOGS
+                    .lock()
+                    .unwrap()
+                    .push(format!("{} が接続されました", engine.name()));
+                }
+                // 接続時、ポートを開いているプロセスのパスを記録
+                ENGINE_PATH
+                  .write()
                   .unwrap()
-                  .push(format!("{} が接続されました", engine.name()));
-              }
-              // 接続時、ポートを開いているプロセスのパスを記録
-              if let Some(path) = get_port_opener_path(format!("{}", engine.port())) {
-                ENGINE_PATH.write().unwrap().insert(engine, path);
+                  .insert(engine, port_opener_path);
                 let mut auto_start = ENGINE_AUTO_START.write().await;
                 if auto_start.get(&engine).is_none() {
                   auto_start.insert(engine, false);
                 }
               }
+              connection_status.insert(engine, true);
+              SPEAKERS_INFO.write().await.insert(engine, speakers_info);
             }
-            connection_status.insert(engine, true);
-            SPEAKERS_INFO.write().await.insert(engine, speakers_info);
-          }
-          Err(e) => {
-            error!("Error: {}", e);
-            let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
-            if connection_status.get(&engine).is_some_and(|v| *v) {
-              CONNECTION_DIALOGS
-                .lock()
-                .unwrap()
-                .push(format!("{} が切断されました", engine.name()));
+            Err(e) => {
+              error!("Error: {}", e);
+              let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
+              if connection_status.get(&engine).is_some_and(|v| *v) {
+                CONNECTION_DIALOGS
+                  .lock()
+                  .unwrap()
+                  .push(format!("{} が切断されました", engine.name()));
+              }
+              connection_status.insert(engine, false);
+              SPEAKERS_INFO.write().await.remove(&engine);
             }
-            connection_status.insert(engine, false);
-            SPEAKERS_INFO.write().await.remove(&engine);
           }
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -237,231 +240,6 @@ pub fn push_to_prediction(text: String, ghost_name: String) {
     PREDICT_QUEUE.lock().await.push_back((text, ghost_name));
   });
 }
-
-/*
-pub struct Queue {
-  runtime: Option<tokio::runtime::Runtime>,
-  speak_handler: Option<tokio::task::JoinHandle<()>>,
-  predict_handler: Option<tokio::task::JoinHandle<()>>,
-  predict_queue: Arc<Mutex<VecDeque<(String, String)>>>,
-  predict_stopper: Arc<Mutex<bool>>,
-  play_handler: Option<tokio::task::JoinHandle<()>>,
-  play_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
-  play_stopper: Arc<Mutex<bool>>,
-}
-*/
-
-/*
-impl Queue {
-  pub fn new() -> Self {
-    let mut s = Self {
-      runtime: Some(tokio::runtime::Runtime::new().unwrap()),
-      speak_handler: None,
-      predict_handler: None,
-      predict_queue: Arc::new(Mutex::new(VecDeque::new())),
-      predict_stopper: Arc::new(Mutex::new(false)),
-      play_handler: None,
-      play_queue: Arc::new(Mutex::new(VecDeque::new())),
-      play_stopper: Arc::new(Mutex::new(false)),
-    };
-
-    for (engine, getter) in get_speaker_getters() {
-      s.speak_handler = Some(s.runtime.as_mut().unwrap().spawn(async move {
-        loop {
-          match getter.get_speakers_info().await {
-            Ok(speakers_info) => {
-              let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
-              if connection_status.get(&engine).is_none()
-                || connection_status.get(&engine).is_some_and(|v| !*v)
-              {
-                {
-                  CONNECTION_DIALOGS
-                    .lock()
-                    .unwrap()
-                    .push(format!("{} が接続されました", engine.name()));
-                }
-                // 接続時、ポートを開いているプロセスのパスを記録
-                if let Some(path) = get_port_opener_path(format!("{}", engine.port())) {
-                  ENGINE_PATH.write().unwrap().insert(engine, path);
-                  let mut auto_start = ENGINE_AUTO_START.write().await;
-                  if auto_start.get(&engine).is_none() {
-                    auto_start.insert(engine, false);
-                  }
-                }
-              }
-              connection_status.insert(engine, true);
-              SPEAKERS_INFO.write().await.insert(engine, speakers_info);
-            }
-            Err(e) => {
-              error!("Error: {}", e);
-              let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
-              if connection_status.get(&engine).is_some_and(|v| *v) {
-                CONNECTION_DIALOGS
-                  .lock()
-                  .unwrap()
-                  .push(format!("{} が切断されました", engine.name()));
-              }
-              connection_status.insert(engine, false);
-              SPEAKERS_INFO.write().await.remove(&engine);
-            }
-          }
-          tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        }
-      }));
-    }
-
-    let predict_queue_cln = Arc::clone(&s.predict_queue);
-    let predict_stopper_cln = Arc::clone(&s.predict_stopper);
-    s.predict_handler = Some(s.runtime.as_mut().unwrap().spawn(async move {
-      loop {
-        {
-          if predict_queue_cln.lock().await.is_empty() {
-            if *predict_stopper_cln.lock().await {
-              break;
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            continue;
-          }
-        }
-
-        let parg;
-        {
-          let mut guard = predict_queue_cln.lock().await;
-          parg = guard.pop_front();
-        }
-
-        match parg {
-          None => continue,
-          Some(parg) => match args_to_predictors(parg) {
-            None => continue,
-            Some(predictors) => {
-              for predictor in predictors {
-                match predictor.predict().await {
-                  Ok(res) => {
-                    debug!("pushing to play");
-                    let queue = QUEUE.lock().unwrap();
-                    queue.push_to_play(res);
-                    debug!("pushed to play");
-                  }
-                  Err(e) => {
-                    debug!("predict failed: {}", e);
-                  }
-                }
-              }
-            }
-          },
-        }
-      }
-    }));
-
-    let play_queue_cln = s.play_queue.clone();
-    let play_stopper_cln = s.play_stopper.clone();
-    s.play_handler = Some(s.runtime.as_mut().unwrap().spawn(async move {
-      loop {
-        {
-          if play_queue_cln.lock().await.is_empty() {
-            if *play_stopper_cln.lock().await {
-              break;
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            continue;
-          }
-        }
-
-        let wav;
-        {
-          let mut guard = play_queue_cln.lock().await;
-          wav = guard.pop_front();
-        }
-        if let Some(data) = wav {
-          if !data.is_empty() {
-            debug!("{}", format!("play: {}", data.len()));
-            if let Err(e) = play_wav(data) {
-              error!("play_wav failed: {}", e);
-            };
-          }
-        }
-      }
-    }));
-    s
-  }
-
-  pub fn stop(&mut self) {
-    debug!("{}", "stopping queue");
-    {
-      // stop signals
-      futures::executor::block_on(async {
-        // speak_handler の停止
-        if let Some(handler) = &self.speak_handler {
-          handler.abort();
-        }
-        debug!("{}", "stopped speak");
-        // predict_handler の停止
-        {
-          *self.predict_stopper.lock().await = true;
-        }
-        loop {
-          {
-            let predict_stopped = if let Some(handler) = &self.predict_handler {
-              handler.is_finished()
-            } else {
-              true
-            };
-            if predict_stopped {
-              break;
-            }
-          }
-          std::thread::sleep(std::time::Duration::from_millis(100));
-          debug!("{}", "stopping predict");
-        }
-        debug!("{}", "stopped predict");
-        // play_handler の停止
-        {
-          *self.play_stopper.lock().await = true;
-        }
-        loop {
-          {
-            let play_stopped = if let Some(handler) = &self.play_handler {
-              handler.is_finished()
-            } else {
-              true
-            };
-            if play_stopped {
-              break;
-            }
-            debug!("{}", "stopping play");
-          }
-          std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-        debug!("{}", "stopped play");
-      });
-    }
-    debug!("{}", "stopped queue");
-    if let Some(runtime) = self.runtime.take() {
-      runtime.shutdown_background();
-    }
-  }
-
-  pub fn push_to_prediction(&self, text: String, ghost_name: String) {
-    futures::executor::block_on(async {
-      // 処理が重いので、別スレッドに投げてそっちでPredictorを作る
-      self
-        .predict_queue
-        .lock()
-        .await
-        .push_back((text, ghost_name));
-    });
-  }
-
-  fn push_to_play(&self, data: Vec<u8>) {
-    debug!("pushing to play");
-    futures::executor::block_on(async {
-      self.play_queue.lock().await.push_back(data);
-    });
-    debug!("pushed to play");
-  }
-}
-*/
 
 fn args_to_predictors(
   args: (String, String),
