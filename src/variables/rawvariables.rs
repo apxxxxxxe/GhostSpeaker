@@ -1,7 +1,7 @@
 use crate::engine::{CharacterVoice, Engine, NO_VOICE_UUID};
 use crate::variables::{
   GhostVoiceInfo, ENGINE_AUTO_START, ENGINE_PATH, GHOSTS_VOICES, INITIAL_VOICE, LAST_VERSION,
-  SPEAK_BY_PUNCTUATION, VAR_PATH, VOLUME
+  SPEAK_BY_PUNCTUATION, VAR_PATH, VOLUME,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -84,7 +84,7 @@ pub struct RawGlobalVariables {
 }
 
 impl RawGlobalVariables {
-  pub fn new(dll_dir: &str) -> Result<Self, std::io::Error> {
+  pub fn new(dll_dir: &str) -> Self {
     let mut g = Self {
       engine_path: Some(HashMap::new()),
       engine_auto_start: Some(HashMap::new()),
@@ -99,12 +99,12 @@ impl RawGlobalVariables {
     debug!("Loading variables from {}", path.display());
     let yaml_str = match std::fs::read_to_string(path) {
       Ok(s) => s,
-      Err(e) => return Err(e),
+      Err(_) => return g,
     };
 
     let vars: RawGlobalVariables = match serde_yaml::from_str(&yaml_str) {
       Ok(v) => v,
-      Err(e) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+      Err(_) => return g,
     };
 
     // TODO: 変数追加時はここに追加することを忘れない
@@ -139,7 +139,7 @@ impl RawGlobalVariables {
     let path = std::path::Path::new(dll_dir).join(VAR_PATH);
     debug!("Loaded variables from {}", path.display());
 
-    Ok(g)
+    g
   }
 
   pub fn save(&self) {

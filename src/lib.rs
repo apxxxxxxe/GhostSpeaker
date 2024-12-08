@@ -52,8 +52,7 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
   )
   .unwrap();
 
-  let raw_global_vars = RawGlobalVariables::new(s).unwrap();
-  copy_from_raw(&raw_global_vars);
+  copy_from_raw(&RawGlobalVariables::new(s));
   *DLL_DIR.write().unwrap() = s.to_string();
 
   panic::set_hook(Box::new(|panic_info| {
