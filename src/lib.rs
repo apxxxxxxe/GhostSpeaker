@@ -32,8 +32,6 @@ use winapi::shared::minwindef::{BOOL, HGLOBAL, TRUE};
 extern crate log;
 extern crate simplelog;
 
-pub static mut DLL_PATH: String = String::new();
-
 #[derive(Debug)]
 pub enum ResponseError {
   DecodeFailed,
