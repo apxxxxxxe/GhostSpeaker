@@ -564,15 +564,3 @@ pub fn on_character_resized(req: &PluginRequest) -> PluginResponse {
   );
   new_response_with_script(script, false)
 }
-
-#[cfg(test)]
-mod test {
-  use crate::events::common::load_descript;
-  #[test]
-  fn test_parse_descript() {
-    let map = load_descript("E:\\Ukagaka\\Ukagaka-Ghost\\お気に入り\\DSLGS".to_string());
-    for (k, v) in map.iter() {
-      println!("{}: {}", k, v);
-    }
-  }
-}
