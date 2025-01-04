@@ -3,7 +3,7 @@ use crate::engine::Predictor;
 use async_trait::async_trait;
 use http::StatusCode;
 
-pub struct VoicevoxFamilyPredictor {
+pub(crate) struct VoicevoxFamilyPredictor {
   pub engine: Engine,
   pub text: String,
   pub speaker: i32,

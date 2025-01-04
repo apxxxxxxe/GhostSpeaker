@@ -11,7 +11,7 @@ use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use shiorust::message::{parts::*, traits::*};
 
-pub fn handle_request(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn handle_request(req: &PluginRequest) -> PluginResponse {
   match req.method {
     Method::GET | Method::NOTIFY => (),
     _ => return new_response_nocontent(),
@@ -43,7 +43,7 @@ pub fn handle_request(req: &PluginRequest) -> PluginResponse {
   res
 }
 
-pub fn version(_req: &PluginRequest) -> PluginResponse {
+pub(crate) fn version(_req: &PluginRequest) -> PluginResponse {
   new_response_with_script(String::from(env!("CARGO_PKG_VERSION")), false)
 }
 

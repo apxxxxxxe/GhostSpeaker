@@ -1,6 +1,6 @@
-pub mod bouyomichan;
-pub mod coeiroink_v2;
-pub mod voicevox_family;
+pub(crate) mod bouyomichan;
+pub(crate) mod coeiroink_v2;
+pub(crate) mod voicevox_family;
 
 use crate::speaker::SpeakerInfo;
 use async_trait::async_trait;
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use voicevox_family::speaker::VoicevoxFamilySpeakerGetter;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
-pub enum Engine {
+pub(crate) enum Engine {
   CoeiroInkV2,
   CoeiroInkV1,
   VoiceVox,
@@ -51,7 +51,7 @@ impl Engine {
   }
 }
 
-pub static ENGINE_LIST: Lazy<Vec<Engine>> = Lazy::new(|| {
+pub(crate) static ENGINE_LIST: Lazy<Vec<Engine>> = Lazy::new(|| {
   vec![
     Engine::CoeiroInkV2,
     Engine::CoeiroInkV1,
@@ -64,18 +64,18 @@ pub static ENGINE_LIST: Lazy<Vec<Engine>> = Lazy::new(|| {
   ]
 });
 
-pub const NO_VOICE_UUID: &str = "dummy";
+pub(crate) const NO_VOICE_UUID: &str = "dummy";
 
-pub fn engine_from_port(port: i32) -> Option<Engine> {
+pub(crate) fn engine_from_port(port: i32) -> Option<Engine> {
   ENGINE_LIST.iter().find(|e| e.port() == port).cloned()
 }
 
 #[async_trait]
-pub trait Predictor {
+pub(crate) trait Predictor {
   async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>>;
 }
 
-pub fn get_speaker_getters() -> HashMap<Engine, Box<dyn SpeakerGetter + Send + Sync>> {
+pub(crate) fn get_speaker_getters() -> HashMap<Engine, Box<dyn SpeakerGetter + Send + Sync>> {
   let mut map = HashMap::new();
   for engine in ENGINE_LIST.iter() {
     map.insert(*engine, get_speaker_getter(*engine));
@@ -92,14 +92,14 @@ fn get_speaker_getter(engine: Engine) -> Box<dyn SpeakerGetter + Send + Sync> {
 }
 
 #[async_trait]
-pub trait SpeakerGetter {
+pub(crate) trait SpeakerGetter {
   async fn get_speakers_info(
     &self,
   ) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct CharacterVoice {
+pub(crate) struct CharacterVoice {
   pub port: i32,
   pub speaker_uuid: String,
   pub style_id: i32,

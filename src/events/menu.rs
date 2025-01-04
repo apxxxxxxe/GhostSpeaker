@@ -51,7 +51,7 @@ fn decorated(s: &str, decoration: &str) -> String {
   format!("\\f[{},1]{}\\f[{},0]", decoration, s, decoration)
 }
 
-pub fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   let mut characters_info = String::new();
   let mut division_setting = String::from("-");
 
@@ -345,7 +345,7 @@ fn list_callback_for_characters(
   (list_callback, dummy_callback)
 }
 
-pub fn on_voice_selecting(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_voice_selecting(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs.first().unwrap();
   let character_name = refs.get(1).unwrap();
@@ -363,7 +363,7 @@ pub fn on_voice_selecting(req: &PluginRequest) -> PluginResponse {
   new_response_with_script(m.to_string(), true)
 }
 
-pub fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs.first().unwrap();
   let character_index = refs.get(1).unwrap().parse::<usize>().unwrap();
@@ -395,7 +395,7 @@ pub fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_volume_change(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_volume_change(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let volume: f32 = refs.first().unwrap().parse().unwrap();
   *VOLUME.write().unwrap() += volume;
@@ -435,7 +435,7 @@ fn list_callback_for_defaultvoices(
   (list_callback, dummy_callback)
 }
 
-pub fn on_default_voice_selecting(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_default_voice_selecting(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs.first().unwrap();
   let ghost_path = refs.get(1).unwrap();
@@ -446,7 +446,7 @@ pub fn on_default_voice_selecting(req: &PluginRequest) -> PluginResponse {
   new_response_with_script(m.to_string(), true)
 }
 
-pub fn on_default_voice_selected(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_default_voice_selected(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let port = refs.first().unwrap();
   let speaker_uuid = refs.get(1).unwrap();
@@ -469,7 +469,7 @@ pub fn on_default_voice_selected(req: &PluginRequest) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_division_setting_changed(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_division_setting_changed(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
@@ -484,7 +484,7 @@ pub fn on_division_setting_changed(req: &PluginRequest) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_punctuation_setting_changed(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_punctuation_setting_changed(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
@@ -498,7 +498,7 @@ pub fn on_punctuation_setting_changed(req: &PluginRequest) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_auto_start_toggled(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_auto_start_toggled(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let port = refs[0].parse::<i32>().unwrap();
   let ghost_name = refs[1].to_string();
@@ -518,7 +518,7 @@ pub fn on_auto_start_toggled(req: &PluginRequest) -> PluginResponse {
   new_response_with_script(script, false)
 }
 
-pub fn on_character_resized(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_character_resized(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let ghost_path = refs[1].to_string();

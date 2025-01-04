@@ -1,1 +1,1 @@
-pub const CRLF: &str = "\r\n";
+pub(crate) const CRLF: &str = "\r\n";

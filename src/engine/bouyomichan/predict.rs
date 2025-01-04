@@ -4,7 +4,7 @@ use crate::variables::*;
 use async_trait::async_trait;
 
 #[derive(Debug)]
-pub struct BouyomichanPredictor {
+pub(crate) struct BouyomichanPredictor {
   pub text: String,
   pub style_id: i32,
 }

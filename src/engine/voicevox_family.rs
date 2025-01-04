@@ -1,2 +1,2 @@
-pub mod predict;
-pub mod speaker;
+pub(crate) mod predict;
+pub(crate) mod speaker;

@@ -2,7 +2,7 @@ use crate::common::CRLF;
 use shiorust::message::parts::*;
 
 #[derive(Debug)]
-pub struct PluginResponse {
+pub(crate) struct PluginResponse {
   pub version: Version,
   pub status: Status,
   pub headers: Headers,

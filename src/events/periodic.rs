@@ -9,7 +9,7 @@ use std::sync::Mutex;
 static UPDATE_CHECKED: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static LOG_INIT_CHECKED: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
-pub fn on_second_change(_req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_second_change(_req: &PluginRequest) -> PluginResponse {
   let mut lines: Vec<String> = Vec::new();
   if let Some(line) = CONNECTION_DIALOGS.lock().unwrap().pop() {
     lines.push(line);

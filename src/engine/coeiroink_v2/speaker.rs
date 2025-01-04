@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub struct SpeakerResponse {
+pub(crate) struct SpeakerResponse {
   #[serde(rename = "speakerName")]
   pub speaker_name: String,
 
@@ -32,7 +32,7 @@ impl SpeakerResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct StyleResponse {
+pub(crate) struct StyleResponse {
   #[serde(rename = "styleName")]
   pub style_name: Option<String>,
 
@@ -55,7 +55,7 @@ impl StyleResponse {
   }
 }
 
-pub struct CoeiroinkV2SpeakerGetter;
+pub(crate) struct CoeiroinkV2SpeakerGetter;
 
 #[async_trait]
 impl SpeakerGetter for CoeiroinkV2SpeakerGetter {

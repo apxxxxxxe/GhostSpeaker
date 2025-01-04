@@ -5,9 +5,9 @@ use std::io::BufReader;
 use std::io::Cursor;
 use std::sync::Mutex;
 
-pub static FORCE_STOP_SINK: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+pub(crate) static FORCE_STOP_SINK: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
-pub fn play_wav(wav: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn play_wav(wav: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
   let (_stream, handle) = OutputStream::try_default()?;
   let sink = Sink::try_new(&handle)?;
   sink.set_volume(*VOLUME.read().unwrap());

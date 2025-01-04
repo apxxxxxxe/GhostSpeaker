@@ -45,7 +45,7 @@ impl StyleResponse {
   }
 }
 
-pub struct VoicevoxFamilySpeakerGetter {
+pub(crate) struct VoicevoxFamilySpeakerGetter {
   pub engine: Engine,
 }
 

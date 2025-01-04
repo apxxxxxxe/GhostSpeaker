@@ -6,7 +6,7 @@ use shiorust::message::{
 };
 use std::str::FromStr;
 
-pub struct PluginRequest {
+pub(crate) struct PluginRequest {
   pub method: Method,
   pub version: Version,
   pub headers: Headers,

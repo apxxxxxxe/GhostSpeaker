@@ -1,11 +1,11 @@
 use regex::Regex;
 
-pub struct Dialog {
+pub(crate) struct Dialog {
   pub text: String,
   pub scope: usize,
 }
 
-pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
+pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
   let mut s = src.clone();
   s = delete_quick_section(s);
 
@@ -37,7 +37,7 @@ pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
   result
 }
 
-pub fn split_by_punctuation(src: String) -> Vec<String> {
+pub(crate) fn split_by_punctuation(src: String) -> Vec<String> {
   let delims_re = Regex::new(r"[！!?？。]").unwrap();
 
   let t = delims_re.replace_all(&src, "$0\u{0}").to_string();

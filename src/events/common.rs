@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-pub fn new_response() -> PluginResponse {
+pub(crate) fn new_response() -> PluginResponse {
   let mut headers = Headers::new();
   headers.insert(
     HeaderName::Standard(StandardHeaderName::Charset),
@@ -19,26 +19,26 @@ pub fn new_response() -> PluginResponse {
   }
 }
 
-pub fn new_response_nocontent() -> PluginResponse {
+pub(crate) fn new_response_nocontent() -> PluginResponse {
   let mut r = new_response();
   r.status = Status::NoContent;
   r
 }
 
-pub fn new_response_with_script(script: String, _use_translate: bool) -> PluginResponse {
+pub(crate) fn new_response_with_script(script: String, _use_translate: bool) -> PluginResponse {
   let mut r = new_response();
   r.headers.insert(HeaderName::from("Script"), script);
   r
 }
 
-pub fn new_response_with_nobreak(script: String, use_translate: bool) -> PluginResponse {
+pub(crate) fn new_response_with_nobreak(script: String, use_translate: bool) -> PluginResponse {
   let mut r = new_response_with_script(script, use_translate);
   r.headers
     .insert(HeaderName::from("ScriptOption"), "nobreak".to_string());
   r
 }
 
-pub fn get_references(req: &PluginRequest) -> Vec<&str> {
+pub(crate) fn get_references(req: &PluginRequest) -> Vec<&str> {
   let mut references: Vec<&str> = Vec::new();
   let mut i = 0;
   while let Some(value) = req
@@ -51,7 +51,7 @@ pub fn get_references(req: &PluginRequest) -> Vec<&str> {
   references
 }
 
-pub fn load_descript(file_path: String) -> HashMap<String, String> {
+pub(crate) fn load_descript(file_path: String) -> HashMap<String, String> {
   let mut descript = HashMap::new();
   let path = Path::new(&file_path)
     .join("ghost")
@@ -86,7 +86,7 @@ pub fn load_descript(file_path: String) -> HashMap<String, String> {
   descript
 }
 
-pub fn count_characters(ghost_description: HashMap<String, String>) -> Vec<String> {
+pub(crate) fn count_characters(ghost_description: HashMap<String, String>) -> Vec<String> {
   let mut characters = Vec::new();
   if let Some(sakura) = ghost_description.get("sakura.name") {
     characters.push(sakura.to_string());

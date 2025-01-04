@@ -1,5 +1,5 @@
 #[derive(Debug, Clone)]
-pub struct SpeakerInfo {
+pub(crate) struct SpeakerInfo {
   pub speaker_name: String,
 
   pub speaker_uuid: String,
@@ -8,7 +8,7 @@ pub struct SpeakerInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct Style {
+pub(crate) struct Style {
   pub style_name: Option<String>,
 
   pub style_id: Option<i32>,

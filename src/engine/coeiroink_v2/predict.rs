@@ -4,7 +4,7 @@ use http::StatusCode;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
-pub struct PredictRequest {
+pub(crate) struct PredictRequest {
   #[serde(rename = "speakerUuid")]
   pub speaker_uuid: String,
 
@@ -22,7 +22,7 @@ pub struct PredictRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ProsodyDetail {
+pub(crate) struct ProsodyDetail {
   #[serde(rename = "phoneme")]
   pub phoneme: String,
 
@@ -33,7 +33,7 @@ pub struct ProsodyDetail {
   pub accent: i32,
 }
 
-pub struct CoeiroinkV2Predictor {
+pub(crate) struct CoeiroinkV2Predictor {
   pub text: String,
   pub speaker_uuid: String,
   pub style_id: i32,

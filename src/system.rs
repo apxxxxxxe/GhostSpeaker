@@ -6,7 +6,7 @@ use std::process::Command;
 use sysinfo::{Pid, Process, ProcessExt, System, SystemExt};
 use winapi::um::winbase::CREATE_NO_WINDOW;
 
-pub fn get_port_opener_path(port: String) -> Option<String> {
+pub(crate) fn get_port_opener_path(port: String) -> Option<String> {
   let output = match Command::new("cmd")
     .args(["/C", "netstat -ano | findstr LISTENING | findstr", &port])
     .creation_flags(CREATE_NO_WINDOW)
@@ -68,7 +68,7 @@ fn extract_parent_process(pid: Pid, system: &mut System) -> Option<&Process> {
   }
 }
 
-pub fn boot_engine(engine: Engine) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn boot_engine(engine: Engine) -> Result<(), Box<dyn std::error::Error>> {
   let engine_path = ENGINE_PATH.read().unwrap();
   let path = engine_path.get(&engine).unwrap();
 

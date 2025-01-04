@@ -4,7 +4,7 @@ use crate::plugin::response::PluginResponse;
 use crate::queue::push_to_prediction;
 use crate::variables::*;
 
-pub fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let flags = refs[2].to_string();
@@ -19,7 +19,7 @@ pub fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   new_response_nocontent()
 }
 
-pub fn on_ghost_boot(req: &PluginRequest) -> PluginResponse {
+pub(crate) fn on_ghost_boot(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[1].to_string();
   let path = refs[4].to_string();

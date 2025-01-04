@@ -1,12 +1,12 @@
-pub mod predict;
-pub mod speaker;
+pub(crate) mod predict;
+pub(crate) mod speaker;
 
 use crate::engine::Engine;
 use std::error::Error;
 use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 
-pub fn connect() -> Result<TcpStream, Box<dyn Error>> {
+pub(crate) fn connect() -> Result<TcpStream, Box<dyn Error>> {
   let address = SocketAddr::new(
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
     Engine::BouyomiChan.port() as u16,
@@ -16,7 +16,7 @@ pub fn connect() -> Result<TcpStream, Box<dyn Error>> {
   Ok(stream)
 }
 
-pub fn speak(text: &str, voice: i16, volume: i16) -> Result<(), Box<dyn Error>> {
+pub(crate) fn speak(text: &str, voice: i16, volume: i16) -> Result<(), Box<dyn Error>> {
   let encoded_text = text.as_bytes();
   let header = make_header(voice, volume, encoded_text.len());
 

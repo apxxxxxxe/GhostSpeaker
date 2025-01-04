@@ -13,23 +13,23 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
 
-pub static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
+pub(crate) static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
   Lazy::new(|| StdMutex::new(Vec::new()));
 
-pub static RUNTIME: Lazy<StdMutex<Option<tokio::runtime::Runtime>>> =
+pub(crate) static RUNTIME: Lazy<StdMutex<Option<tokio::runtime::Runtime>>> =
   Lazy::new(|| StdMutex::new(Some(tokio::runtime::Runtime::new().unwrap())));
-pub static SPEAK_HANDLERS: Lazy<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
+pub(crate) static SPEAK_HANDLERS: Lazy<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| Mutex::new(Vec::new()));
-pub static PREDICT_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
+pub(crate) static PREDICT_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| Mutex::new(None));
-pub static PREDICT_QUEUE: Lazy<Arc<Mutex<VecDeque<(String, String)>>>> =
+pub(crate) static PREDICT_QUEUE: Lazy<Arc<Mutex<VecDeque<(String, String)>>>> =
   Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
-pub static PREDICT_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
-pub static PLAY_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
+pub(crate) static PREDICT_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+pub(crate) static PLAY_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| Mutex::new(None));
-pub static PLAY_QUEUE: Lazy<Arc<Mutex<VecDeque<Vec<u8>>>>> =
+pub(crate) static PLAY_QUEUE: Lazy<Arc<Mutex<VecDeque<Vec<u8>>>>> =
   Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
-pub static PLAY_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+pub(crate) static PLAY_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 
 fn init_speak_queue() {
   let mut runtime = RUNTIME.lock().unwrap();
@@ -137,7 +137,7 @@ fn init_predict_queue() {
   });
 }
 
-pub fn init_play_queue() {
+pub(crate) fn init_play_queue() {
   let play_queue_cln = PLAY_QUEUE.clone();
   let play_stopper_cln = PLAY_STOPPER.clone();
   let handler = RUNTIME.lock().unwrap().as_mut().unwrap().spawn(async move {
@@ -172,13 +172,13 @@ pub fn init_play_queue() {
   });
 }
 
-pub fn init_queues() {
+pub(crate) fn init_queues() {
   init_speak_queue();
   init_predict_queue();
   init_play_queue();
 }
 
-pub fn stop_queues() {
+pub(crate) fn stop_queues() {
   debug!("{}", "stopping queue");
   {
     // stop signals
@@ -234,7 +234,7 @@ pub fn stop_queues() {
   }
 }
 
-pub fn push_to_prediction(text: String, ghost_name: String) {
+pub(crate) fn push_to_prediction(text: String, ghost_name: String) {
   futures::executor::block_on(async {
     // 処理が重いので、別スレッドに投げてそっちでPredictorを作る
     PREDICT_QUEUE.lock().await.push_back((text, ghost_name));

@@ -3,9 +3,9 @@ use crate::speaker::{SpeakerInfo, Style};
 use async_trait::async_trait;
 use sysinfo::{ProcessExt, System, SystemExt};
 
-pub const BOUYOMICHAN_UUID: &str = "bouyomichan";
+pub(crate) const BOUYOMICHAN_UUID: &str = "bouyomichan";
 
-pub struct BouyomiChanSpeakerGetter;
+pub(crate) struct BouyomiChanSpeakerGetter;
 
 #[async_trait]
 impl SpeakerGetter for BouyomiChanSpeakerGetter {

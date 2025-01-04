@@ -6,7 +6,7 @@ use crate::variables::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub fn copy_from_raw(raw: &RawGlobalVariables) {
+pub(crate) fn copy_from_raw(raw: &RawGlobalVariables) {
   // *self.engine_path.write().unwrap() = raw.engine_path.clone().unwrap_or_default();
   // *self.engine_auto_start.write().unwrap() = raw.engine_auto_start.clone().unwrap_or_default();
   // *self.volume.write().unwrap() = raw.volume.unwrap_or(DEFAULT_VOLUME);
@@ -40,7 +40,7 @@ pub fn copy_from_raw(raw: &RawGlobalVariables) {
   }
 }
 
-pub fn save_variables() {
+pub(crate) fn save_variables() {
   // RawGlobalVariablesに変換
   let engine_auto_start =
     futures::executor::block_on(async { ENGINE_AUTO_START.read().await.clone() });
@@ -58,7 +58,7 @@ pub fn save_variables() {
 
 // yamlファイルからパースする際の構造体
 #[derive(Serialize, Deserialize)]
-pub struct RawGlobalVariables {
+pub(crate) struct RawGlobalVariables {
   // 変数を追加した場合はloadの中身も変更することを忘れないように
 
   // エンジンのパス
