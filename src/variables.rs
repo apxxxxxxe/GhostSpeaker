@@ -28,6 +28,7 @@ pub static SPEAKERS_INFO: Lazy<TokioRwLock<HashMap<Engine, Vec<SpeakerInfo>>>> =
   Lazy::new(|| TokioRwLock::new(HashMap::new()));
 pub static CURRENT_CONNECTION_STATUS: Lazy<TokioRwLock<HashMap<Engine, bool>>> =
   Lazy::new(|| TokioRwLock::new(HashMap::new()));
+pub static LOG_INIT_SUCCESS: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::new(false));
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GhostVoiceInfo {

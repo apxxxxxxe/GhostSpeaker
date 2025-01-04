@@ -19,6 +19,7 @@ use crate::variables::rawvariables::save_variables;
 use crate::variables::rawvariables::RawGlobalVariables;
 use crate::variables::DLL_DIR;
 use crate::variables::ENGINE_AUTO_START;
+use crate::variables::LOG_INIT_SUCCESS;
 use shiori_hglobal::*;
 use shiorust::message::Parser;
 use simplelog::*;
@@ -43,12 +44,13 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
   let s = v.to_utf8_str().unwrap();
 
   let log_path = Path::new(&s).join("ghost-speaker.log");
-  WriteLogger::init(
-    LevelFilter::Debug,
-    Config::default(),
-    File::create(log_path).unwrap(),
-  )
-  .unwrap();
+  if let Ok(log_writer) = File::create(&log_path) {
+    if WriteLogger::init(LevelFilter::Debug, Config::default(), log_writer).is_err() {
+      eprintln!("Failed to initialize logger");
+    } else {
+      *LOG_INIT_SUCCESS.write().unwrap() = true;
+    }
+  };
 
   copy_from_raw(&RawGlobalVariables::new(s));
   *DLL_DIR.write().unwrap() = s.to_string();
