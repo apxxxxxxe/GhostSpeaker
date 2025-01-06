@@ -1,6 +1,6 @@
 charset,UTF-8
 file,.cargo/config.toml8e5aa0408f0bd67eadd70f7716f80d93size=42date=2012-12-21T00:00:00
 file,descript.txt99c242dcdaa42b17421b81a30c2e3198size=788date=2012-12-21T00:00:00
-file,ghost_speaker.dll226a90d35c944fb7ecfd0469fd3becbcsize=4851712date=2012-12-21T00:00:00
+file,ghost_speaker.dll2cfb8bd76aa498e8b88f4dd44eb886c4size=4854272date=2012-12-21T00:00:00
 file,install.txt5bafcf40f649f93a7d5a4dca954165f0size=73date=2012-12-21T00:00:00
 file,readme.txtfc04dc03feeaeae5f79b3ffc45ebd209size=2850date=2012-12-21T00:00:00
