@@ -24,7 +24,8 @@ pub(crate) static PREDICT_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>
   Lazy::new(|| Mutex::new(None));
 pub(crate) static PREDICT_QUEUE: Lazy<Arc<Mutex<VecDeque<(String, String)>>>> =
   Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
-pub(crate) static PREDICT_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+pub(crate) static PREDICT_STOPPER: Lazy<Arc<Mutex<bool>>> =
+  Lazy::new(|| Arc::new(Mutex::new(false)));
 pub(crate) static PLAY_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| Mutex::new(None));
 pub(crate) static PLAY_QUEUE: Lazy<Arc<Mutex<VecDeque<Vec<u8>>>>> =
@@ -178,7 +179,12 @@ pub(crate) fn init_queues() {
   init_play_queue();
 }
 
-pub(crate) fn stop_queues() {
+pub(crate) fn stop_queues() -> Result<
+  (),
+  std::sync::PoisonError<
+    std::sync::MutexGuard<'static, std::option::Option<tokio::runtime::Runtime>>,
+  >,
+> {
   debug!("{}", "stopping queue");
   {
     // stop signals
@@ -229,9 +235,10 @@ pub(crate) fn stop_queues() {
     });
   }
   debug!("{}", "stopped queue");
-  if let Some(runtime) = RUNTIME.lock().unwrap().take() {
+  if let Some(runtime) = RUNTIME.lock()?.take() {
     runtime.shutdown_background();
   }
+  Ok(())
 }
 
 pub(crate) fn push_to_prediction(text: String, ghost_name: String) {

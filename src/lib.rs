@@ -27,7 +27,7 @@ use std::fs::File;
 use std::panic;
 use std::path::Path;
 use winapi::ctypes::c_long;
-use winapi::shared::minwindef::{BOOL, HGLOBAL, TRUE};
+use winapi::shared::minwindef::{BOOL, FALSE, HGLOBAL, TRUE};
 
 #[macro_use]
 extern crate log;
@@ -36,19 +36,33 @@ extern crate simplelog;
 #[no_mangle]
 pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
   let v = GStr::capture(h, len as usize);
-  let s = v.to_utf8_str().unwrap();
+  let s = match v.to_utf8_str() {
+    Ok(s) => s,
+    Err(_) => {
+      eprintln!("Failed to convert HGLOBAL to UTF-8");
+      return FALSE;
+    }
+  };
 
   let log_path = Path::new(&s).join("ghost-speaker.log");
   if let Ok(log_writer) = File::create(&log_path) {
     if WriteLogger::init(LevelFilter::Debug, Config::default(), log_writer).is_err() {
       eprintln!("Failed to initialize logger");
     } else {
-      *LOG_INIT_SUCCESS.write().unwrap() = true;
+      let mut log_init_success = match LOG_INIT_SUCCESS.write() {
+        Ok(l) => l,
+        Err(_) => return FALSE,
+      };
+      *log_init_success = true;
     }
   };
 
   copy_from_raw(&RawGlobalVariables::new(s));
-  *DLL_DIR.write().unwrap() = s.to_string();
+  let mut dll_dir = match DLL_DIR.write() {
+    Ok(d) => d,
+    Err(_) => return FALSE,
+  };
+  *dll_dir = s.to_string();
 
   panic::set_hook(Box::new(|panic_info| {
     debug!("{}", panic_info);
@@ -74,8 +88,12 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
-  save_variables();
-  stop_queues();
+  if save_variables().is_err() {
+    error!("Failed to save variables");
+  }
+  if stop_queues().is_err() {
+    error!("Failed to stop queues");
+  }
 
   debug!("unload");
 
@@ -85,12 +103,25 @@ pub extern "cdecl" fn unload() -> BOOL {
 #[allow(clippy::missing_safety_doc)]
 #[no_mangle]
 pub unsafe extern "cdecl" fn request(h: HGLOBAL, len: *mut c_long) -> HGLOBAL {
-  // リクエストの取得
+  const RESPONSE_400: &str = "SHIORI/3.0 400 Bad Request\r\n\r\n";
   let v = unsafe { GStr::capture(h, *len as usize) };
+  let s = match v.to_utf8_str() {
+    Ok(s) => s,
+    Err(_) => {
+      let response_gstr = GStr::clone_from_slice_nofree(RESPONSE_400.as_bytes());
+      *len = response_gstr.len() as c_long;
+      return response_gstr.handle();
+    }
+  };
 
-  let s = v.to_utf8_str().unwrap();
-
-  let pr = PluginRequest::parse(s).unwrap();
+  let pr = match PluginRequest::parse(s) {
+    Ok(pr) => pr,
+    Err(_) => {
+      let response_gstr = GStr::clone_from_slice_nofree(RESPONSE_400.as_bytes());
+      *len = response_gstr.len() as c_long;
+      return response_gstr.handle();
+    }
+  };
 
   let response = events::handle_request(&pr);
 

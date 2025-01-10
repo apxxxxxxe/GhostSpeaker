@@ -40,20 +40,21 @@ pub(crate) fn copy_from_raw(raw: &RawGlobalVariables) {
   }
 }
 
-pub(crate) fn save_variables() {
+pub(crate) fn save_variables() -> Result<(), Box<dyn std::error::Error>> {
   // RawGlobalVariablesに変換
   let engine_auto_start =
     futures::executor::block_on(async { ENGINE_AUTO_START.read().await.clone() });
   let raw = RawGlobalVariables {
-    engine_path: Some(ENGINE_PATH.read().unwrap().clone()),
+    engine_path: Some(ENGINE_PATH.read()?.clone()),
     engine_auto_start: Some(engine_auto_start),
-    volume: Some(*VOLUME.read().unwrap()),
-    speak_by_punctuation: Some(*SPEAK_BY_PUNCTUATION.read().unwrap()),
-    ghosts_voices: Some(GHOSTS_VOICES.read().unwrap().clone()),
-    initial_voice: INITIAL_VOICE.read().unwrap().clone(),
-    last_version: LAST_VERSION.read().unwrap().clone().into(),
+    volume: Some(*VOLUME.read()?),
+    speak_by_punctuation: Some(*SPEAK_BY_PUNCTUATION.read()?),
+    ghosts_voices: Some(GHOSTS_VOICES.read()?.clone()),
+    initial_voice: INITIAL_VOICE.read()?.clone(),
+    last_version: LAST_VERSION.read()?.clone().into(),
   };
   raw.save();
+  Ok(())
 }
 
 // yamlファイルからパースする際の構造体
