@@ -5,9 +5,18 @@ pub(crate) struct Dialog {
   pub scope: usize,
 }
 
-pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
+pub(crate) fn split_dialog(
+  src: String,
+  devide_by_lines: bool,
+  speak_quicksection: bool,
+) -> Vec<Dialog> {
   let mut s = src.clone();
-  s = delete_quick_section(s);
+  if !speak_quicksection {
+    s = delete_quick_section(s);
+  } else {
+    let quicksection_re = Regex::new(r"\\![quicksection,(true|false|1|0)]").unwrap();
+    s = quicksection_re.replace_all(&s, "").to_string();
+  }
 
   let lines_re = Regex::new(r"(\\n(\[[^\]]+\])?)+").unwrap();
   if devide_by_lines {

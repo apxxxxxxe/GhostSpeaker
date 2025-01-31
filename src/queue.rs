@@ -275,12 +275,18 @@ fn args_to_predictors(
     .get(&ghost_name)
     .unwrap()
     .devide_by_lines;
+  let speak_quicksection = GHOSTS_VOICES
+    .read()
+    .unwrap()
+    .get(&ghost_name)
+    .unwrap()
+    .speak_quicksection;
 
   let speak_by_punctuation = SPEAK_BY_PUNCTUATION.read().unwrap();
 
   let ghosts_voices = GHOSTS_VOICES.write().unwrap();
   let speakers = &ghosts_voices.get(&ghost_name).unwrap().voices;
-  for dialog in split_dialog(text, devide_by_lines) {
+  for dialog in split_dialog(text, devide_by_lines, speak_quicksection) {
     if dialog.text.is_empty() {
       continue;
     }

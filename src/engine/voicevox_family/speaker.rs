@@ -51,7 +51,9 @@ pub(crate) struct VoicevoxFamilySpeakerGetter {
 
 #[async_trait]
 impl SpeakerGetter for VoicevoxFamilySpeakerGetter {
-  async fn get_speakers_info(&self) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>> {
+  async fn get_speakers_info(
+    &self,
+  ) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>> {
     let domain: String = format!("http://localhost:{}/", self.engine.port());
     println!("Requesting speakers info from {}", domain);
 

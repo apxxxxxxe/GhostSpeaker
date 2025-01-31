@@ -54,6 +54,7 @@ fn decorated(s: &str, decoration: &str) -> String {
 pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   let mut characters_info = String::new();
   let mut division_setting = String::from("-");
+  let mut quicksection_setting = String::from("-");
 
   let refs = get_references(req);
   let ghost_name = refs.get(1).unwrap().to_string();
@@ -78,6 +79,17 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     };
     division_setting = format!(
       "【現在 \\__q[OnDivisionSettingChanged,{},{}]{}\\__q】\\n",
+      ghost_name,
+      path_for_arg,
+      decorated(&switch, "bold"),
+    );
+    let switch = if si.speak_quicksection {
+      ACTIVATED.to_string()
+    } else {
+      DEACTIVATED.to_string()
+    };
+    quicksection_setting = format!(
+      "【現在 \\__q[OnQuicksectionSettingChanged,{},{}]{}\\__q】\\n",
       ghost_name,
       path_for_arg,
       decorated(&switch, "bold"),
@@ -199,6 +211,7 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       \\![*]音量調整(共通)\\n    {}\
       \\![*]句読点ごとに読み上げ(共通)\\n    {}\
       \\![*]改行で一拍おく(ゴースト別)\\n    {}\
+      \\![*]\\\\_qタグ内を読み上げる(ゴースト別)\\n    {}\
       \\![*]デフォルト声質(共通)\\n    {}\
       \\n\\q[×,]\
       ",
@@ -210,6 +223,7 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     volume_changer,
     punctuation_changer,
     division_setting,
+    quicksection_setting,
     default_voice_info,
   );
 
@@ -475,6 +489,21 @@ pub(crate) fn on_division_setting_changed(req: &PluginRequest) -> PluginResponse
   let path_for_arg = refs[1].to_string();
   if let Some(info) = GHOSTS_VOICES.write().unwrap().get_mut(&ghost_name) {
     info.devide_by_lines = !info.devide_by_lines
+  }
+
+  let script = format!(
+    "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+    PLUGIN_UUID, ghost_name, path_for_arg
+  );
+  new_response_with_script(script, false)
+}
+
+pub(crate) fn on_quicksection_setting_changed(req: &PluginRequest) -> PluginResponse {
+  let refs = get_references(req);
+  let ghost_name = refs[0].to_string();
+  let path_for_arg = refs[1].to_string();
+  if let Some(info) = GHOSTS_VOICES.write().unwrap().get_mut(&ghost_name) {
+    info.speak_quicksection = !info.speak_quicksection
   }
 
   let script = format!(

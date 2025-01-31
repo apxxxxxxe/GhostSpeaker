@@ -58,6 +58,7 @@ fn get_event(id: &str) -> Option<fn(&PluginRequest) -> PluginResponse> {
     "OnDefaultVoiceSelecting" => Some(on_default_voice_selecting),
     "OnDefaultVoiceSelected" => Some(on_default_voice_selected),
     "OnDivisionSettingChanged" => Some(on_division_setting_changed),
+    "OnQuicksectionSettingChanged" => Some(on_quicksection_setting_changed),
     "OnPunctuationSettingChanged" => Some(on_punctuation_setting_changed),
     "OnSecondChange" => Some(on_second_change),
     "OnAutoStartToggled" => Some(on_auto_start_toggled),

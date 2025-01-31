@@ -32,6 +32,7 @@ pub(crate) static LOG_INIT_SUCCESS: Lazy<RwLock<bool>> = Lazy::new(|| RwLock::ne
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct GhostVoiceInfo {
+  pub speak_quicksection: bool,
   pub devide_by_lines: bool,
   pub voices: Vec<Option<CharacterVoice>>,
 }
@@ -41,6 +42,7 @@ impl Default for GhostVoiceInfo {
     let mut v = Vec::new();
     v.resize(10, None);
     GhostVoiceInfo {
+      speak_quicksection: false,
       devide_by_lines: false,
       voices: v,
     }
@@ -52,6 +54,7 @@ impl GhostVoiceInfo {
     let mut v = Vec::new();
     v.resize(character_count, None);
     GhostVoiceInfo {
+      speak_quicksection: false,
       devide_by_lines: false,
       voices: v,
     }
