@@ -4,7 +4,7 @@ use encoding_rs::{SHIFT_JIS, UTF_8};
 use shiorust::message::{parts::HeaderName, parts::*, traits::*};
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 pub(crate) fn new_response() -> PluginResponse {
   let mut headers = Headers::new();
@@ -53,7 +53,7 @@ pub(crate) fn get_references(req: &PluginRequest) -> Vec<&str> {
 
 pub(crate) fn load_descript(file_path: String) -> HashMap<String, String> {
   let mut descript = HashMap::new();
-  let path = Path::new(&file_path)
+  let path = PathBuf::from(file_path)
     .join("ghost")
     .join("master")
     .join("descript.txt");

@@ -25,7 +25,7 @@ use shiorust::message::Parser;
 use simplelog::*;
 use std::fs::File;
 use std::panic;
-use std::path::Path;
+use std::path::PathBuf;
 use winapi::ctypes::c_long;
 use winapi::shared::minwindef::{BOOL, FALSE, HGLOBAL, TRUE};
 
@@ -36,15 +36,30 @@ extern crate simplelog;
 #[no_mangle]
 pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
   let v = GStr::capture(h, len as usize);
-  let s = match v.to_utf8_str() {
-    Ok(s) => s,
-    Err(_) => {
-      eprintln!("Failed to convert HGLOBAL to UTF-8");
-      return FALSE;
+  let s: String;
+  match v.to_utf8_str() {
+    Ok(st) => {
+      // UTF-8に変換
+      s = st.to_string();
+    }
+    Err(e) => {
+      eprintln!("Failed to convert HGLOBAL to UTF-8: {:?}", e);
+      match v.to_ansi_str() {
+        Ok(st) => {
+          // ANSIに変換
+          s = st.to_string_lossy().to_string();
+        }
+        Err(e) => {
+          eprintln!("Failed to convert HGLOBAL to ANSI: {:?}", e);
+          return FALSE;
+        }
+      }
     }
   };
 
-  let log_path = Path::new(&s).join("ghost-speaker.log");
+  // Windows(UTF-16)を想定しPathBufでパスを作成
+  let log_path = PathBuf::from(&s).join("ghost-speaker.log");
+  println!("log_path: {:?}", log_path);
   if let Ok(log_writer) = File::create(&log_path) {
     if WriteLogger::init(LevelFilter::Debug, Config::default(), log_writer).is_err() {
       eprintln!("Failed to initialize logger");
@@ -57,7 +72,7 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
     }
   };
 
-  copy_from_raw(&RawGlobalVariables::new(s));
+  copy_from_raw(&RawGlobalVariables::new(&s));
   let mut dll_dir = match DLL_DIR.write() {
     Ok(d) => d,
     Err(_) => return FALSE,

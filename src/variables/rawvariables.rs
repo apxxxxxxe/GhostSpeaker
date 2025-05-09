@@ -3,6 +3,7 @@ use crate::variables::{
   GhostVoiceInfo, ENGINE_AUTO_START, ENGINE_PATH, GHOSTS_VOICES, INITIAL_VOICE, LAST_VERSION,
   SPEAK_BY_PUNCTUATION, VAR_PATH, VOLUME,
 };
+use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -137,7 +138,7 @@ impl RawGlobalVariables {
       g.update();
     }
 
-    let path = std::path::Path::new(dll_dir).join(VAR_PATH);
+    let path = PathBuf::from(dll_dir).join(VAR_PATH);
     debug!("Loaded variables from {}", path.display());
 
     g
