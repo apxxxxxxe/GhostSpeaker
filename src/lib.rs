@@ -34,6 +34,32 @@ extern crate log;
 extern crate simplelog;
 
 #[no_mangle]
+pub extern "cdecl" fn loadu(h: HGLOBAL, len: c_long) -> BOOL {
+  let v = GStr::capture(h, len as usize);
+  let s = match v.to_utf8_str() {
+    Ok(st) => {
+      // UTF-8に変換
+      st.to_string()
+    }
+    Err(e) => {
+      eprintln!("Failed to convert HGLOBAL to UTF-8: {:?}", e);
+      return FALSE;
+    }
+  };
+
+  match common_load_process(&s) {
+    Ok(_) => {
+      debug!("loadu");
+      TRUE
+    }
+    Err(_) => {
+      eprintln!("Failed to load plugin");
+      FALSE
+    }
+  }
+}
+
+#[no_mangle]
 pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
   let v = GStr::capture(h, len as usize);
   let s: String;
@@ -57,8 +83,21 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
     }
   };
 
+  match common_load_process(&s) {
+    Ok(_) => {
+      debug!("load");
+      TRUE
+    }
+    Err(_) => {
+      eprintln!("Failed to load plugin");
+      FALSE
+    }
+  }
+}
+
+fn common_load_process(dll_path: &str) -> Result<(), ()> {
   // Windows(UTF-16)を想定しPathBufでパスを作成
-  let log_path = PathBuf::from(&s).join("ghost-speaker.log");
+  let log_path = PathBuf::from(dll_path).join("ghost-speaker.log");
   println!("log_path: {:?}", log_path);
   if let Ok(log_writer) = File::create(&log_path) {
     if WriteLogger::init(LevelFilter::Debug, Config::default(), log_writer).is_err() {
@@ -66,18 +105,18 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
     } else {
       let mut log_init_success = match LOG_INIT_SUCCESS.write() {
         Ok(l) => l,
-        Err(_) => return FALSE,
+        Err(_) => return Err(()),
       };
       *log_init_success = true;
     }
   };
 
-  copy_from_raw(&RawGlobalVariables::new(&s));
+  copy_from_raw(&RawGlobalVariables::new(dll_path));
   let mut dll_dir = match DLL_DIR.write() {
     Ok(d) => d,
-    Err(_) => return FALSE,
+    Err(_) => return Err(()),
   };
-  *dll_dir = s.to_string();
+  *dll_dir = dll_path.to_string();
 
   panic::set_hook(Box::new(|panic_info| {
     debug!("{}", panic_info);
@@ -96,9 +135,7 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 
   init_queues();
 
-  debug!("load");
-
-  TRUE
+  Ok(())
 }
 
 #[no_mangle]
