@@ -8,6 +8,12 @@ use crate::system::get_port_opener_path;
 use crate::variables::GHOSTS_VOICES;
 use crate::variables::*;
 use once_cell::sync::Lazy;
+use std::time::{Duration, Instant};
+
+// タイムアウト定数
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+const QUEUE_POLL_TIMEOUT: Duration = Duration::from_millis(100);
+
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -31,16 +37,28 @@ pub(crate) static PLAY_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>>
 pub(crate) static PLAY_QUEUE: Lazy<Arc<Mutex<VecDeque<Vec<u8>>>>> =
   Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
 pub(crate) static PLAY_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+pub(crate) static SPEAK_QUEUE_STOPPER: Lazy<Arc<Mutex<bool>>> =
+  Lazy::new(|| Arc::new(Mutex::new(false)));
 
 fn init_speak_queue() {
   let mut runtime = RUNTIME.lock().unwrap();
   let mut speak_handlers = Vec::new();
   for (engine, getter) in get_speaker_getters() {
     let handler = runtime.as_mut().unwrap().spawn(async move {
+      let mut consecutive_failures = 0;
+      const MAX_CONSECUTIVE_FAILURES: u32 = 10; // 最大連続失敗回数
+      const BACKOFF_BASE: u64 = 2; // バックオフ基数（秒）
+
       loop {
+        // 停止チェック
+        if *SPEAK_QUEUE_STOPPER.lock().await {
+          debug!("Speak queue stopping for engine: {}", engine.name());
+          break;
+        }
         if let Some(port_opener_path) = get_port_opener_path(format!("{}", engine.port())) {
           match getter.get_speakers_info().await {
             Ok(speakers_info) => {
+              consecutive_failures = 0; // 成功時はリセット
               let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
               if connection_status.get(&engine).is_none()
                 || connection_status.get(&engine).is_some_and(|v| !*v)
@@ -65,7 +83,22 @@ fn init_speak_queue() {
               SPEAKERS_INFO.write().await.insert(engine, speakers_info);
             }
             Err(e) => {
-              error!("Error: {}", e);
+              consecutive_failures += 1;
+              error!(
+                "Error: {} (consecutive failures: {})",
+                e, consecutive_failures
+              );
+
+              // 最大失敗回数に達した場合の処理
+              if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                error!(
+                  "Too many consecutive failures for engine: {}, backing off",
+                  engine.name()
+                );
+                let backoff_time = std::cmp::min(BACKOFF_BASE.pow(consecutive_failures / 5), 60); // 最大60秒
+                tokio::time::sleep(Duration::from_secs(backoff_time)).await;
+              }
+
               let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
               if connection_status.get(&engine).is_some_and(|v| *v) {
                 CONNECTION_DIALOGS
@@ -92,13 +125,23 @@ fn init_predict_queue() {
   let predict_queue_cln = PREDICT_QUEUE.clone();
   let predict_stopper_cln = PREDICT_STOPPER.clone();
   let handler = RUNTIME.lock().unwrap().as_mut().unwrap().spawn(async move {
+    let mut last_activity = Instant::now();
+    const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
+
     loop {
       {
         if predict_queue_cln.lock().await.is_empty() {
           if *predict_stopper_cln.lock().await {
             break;
           }
-          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+          // アイドル時間チェック
+          if last_activity.elapsed() > MAX_IDLE_TIME {
+            debug!("Predict queue idle for too long, continuing...");
+            last_activity = Instant::now();
+          }
+
+          tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
           continue;
         }
       }
@@ -111,25 +154,28 @@ fn init_predict_queue() {
 
       match parg {
         None => continue,
-        Some(parg) => match args_to_predictors(parg) {
-          None => continue,
-          Some(predictors) => {
-            for predictor in predictors {
-              match predictor.predict().await {
-                Ok(res) => {
-                  debug!("pushing to play");
-                  futures::executor::block_on(async {
-                    PLAY_QUEUE.lock().await.push_back(res);
-                  });
-                  debug!("pushed to play");
-                }
-                Err(e) => {
-                  debug!("predict failed: {}", e);
+        Some(parg) => {
+          last_activity = Instant::now(); // アクティビティ更新
+          match args_to_predictors(parg) {
+            None => continue,
+            Some(predictors) => {
+              for predictor in predictors {
+                match predictor.predict().await {
+                  Ok(res) => {
+                    debug!("pushing to play");
+                    futures::executor::block_on(async {
+                      PLAY_QUEUE.lock().await.push_back(res);
+                    });
+                    debug!("pushed to play");
+                  }
+                  Err(e) => {
+                    debug!("predict failed: {}", e);
+                  }
                 }
               }
             }
           }
-        },
+        }
       }
     }
   });
@@ -142,13 +188,23 @@ pub(crate) fn init_play_queue() {
   let play_queue_cln = PLAY_QUEUE.clone();
   let play_stopper_cln = PLAY_STOPPER.clone();
   let handler = RUNTIME.lock().unwrap().as_mut().unwrap().spawn(async move {
+    let mut last_activity = Instant::now();
+    const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
+
     loop {
       {
         if play_queue_cln.lock().await.is_empty() {
           if *play_stopper_cln.lock().await {
             break;
           }
-          tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+          // アイドル時間チェック
+          if last_activity.elapsed() > MAX_IDLE_TIME {
+            debug!("Play queue idle for too long, continuing...");
+            last_activity = Instant::now();
+          }
+
+          tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
           continue;
         }
       }
@@ -160,6 +216,7 @@ pub(crate) fn init_play_queue() {
       }
       if let Some(data) = wav {
         if !data.is_empty() {
+          last_activity = Instant::now(); // アクティビティ更新
           debug!("{}", format!("play: {}", data.len()));
           if let Err(e) = play_wav(data) {
             error!("play_wav failed: {}", e);
@@ -190,6 +247,7 @@ pub(crate) fn stop_queues() -> Result<
     // stop signals
     futures::executor::block_on(async {
       // speak_handler の停止
+      *SPEAK_QUEUE_STOPPER.lock().await = true; // 停止フラグ設定
       for handler in SPEAK_HANDLERS.lock().await.iter() {
         handler.abort();
       }
@@ -198,6 +256,7 @@ pub(crate) fn stop_queues() -> Result<
       {
         *PREDICT_STOPPER.lock().await = true;
       }
+      let start_time = Instant::now();
       loop {
         {
           let predict_stopped = if let Some(handler) = &*PREDICT_HANDLER.lock().await {
@@ -209,7 +268,17 @@ pub(crate) fn stop_queues() -> Result<
             break;
           }
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // タイムアウトチェック
+        if start_time.elapsed() >= SHUTDOWN_TIMEOUT {
+          error!("Predict handler shutdown timeout exceeded, forcing abort");
+          if let Some(handler) = PREDICT_HANDLER.lock().await.as_ref() {
+            handler.abort();
+          }
+          break;
+        }
+
+        std::thread::sleep(QUEUE_POLL_TIMEOUT);
         debug!("{}", "stopping predict");
       }
       debug!("{}", "stopped predict");
@@ -217,6 +286,7 @@ pub(crate) fn stop_queues() -> Result<
       {
         *PLAY_STOPPER.lock().await = true;
       }
+      let start_time = Instant::now();
       loop {
         {
           let play_stopped = if let Some(handler) = &*PLAY_HANDLER.lock().await {
@@ -227,9 +297,19 @@ pub(crate) fn stop_queues() -> Result<
           if play_stopped {
             break;
           }
-          debug!("{}", "stopping play");
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // タイムアウトチェック
+        if start_time.elapsed() >= SHUTDOWN_TIMEOUT {
+          error!("Play handler shutdown timeout exceeded, forcing abort");
+          if let Some(handler) = PLAY_HANDLER.lock().await.as_ref() {
+            handler.abort();
+          }
+          break;
+        }
+
+        debug!("{}", "stopping play");
+        std::thread::sleep(QUEUE_POLL_TIMEOUT);
       }
       debug!("{}", "stopped play");
     });

@@ -59,7 +59,9 @@ pub(crate) struct CoeiroinkV2SpeakerGetter;
 
 #[async_trait]
 impl SpeakerGetter for CoeiroinkV2SpeakerGetter {
-  async fn get_speakers_info(&self) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>> {
+  async fn get_speakers_info(
+    &self,
+  ) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>> {
     const URL: &str = "http://localhost:50032/v1/speakers";
     println!("Requesting speakers info from {}", URL);
 

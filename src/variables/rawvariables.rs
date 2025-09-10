@@ -3,9 +3,9 @@ use crate::variables::{
   GhostVoiceInfo, ENGINE_AUTO_START, ENGINE_PATH, GHOSTS_VOICES, INITIAL_VOICE, LAST_VERSION,
   SPEAK_BY_PUNCTUATION, VAR_PATH, VOLUME,
 };
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub(crate) fn copy_from_raw(raw: &RawGlobalVariables) {
   // *self.engine_path.write().unwrap() = raw.engine_path.clone().unwrap_or_default();

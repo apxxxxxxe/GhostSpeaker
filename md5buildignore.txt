@@ -32,3 +32,8 @@ src/
 Cargo.toml
 Cargo.lock
 rustfmt.toml
+
+CLAUDE.md
+.claude/
+.serena/
+.mcp.json

@@ -9,7 +9,9 @@ pub(crate) struct BouyomiChanSpeakerGetter;
 
 #[async_trait]
 impl SpeakerGetter for BouyomiChanSpeakerGetter {
-  async fn get_speakers_info(&self) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>> {
+  async fn get_speakers_info(
+    &self,
+  ) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>> {
     if !is_process_running("BouyomiChan.exe") {
       return Err("BouyomiChan.exe is not running".into());
     }
