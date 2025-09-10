@@ -20,23 +20,42 @@ pub(crate) fn get_port_opener_path(port: String) -> Option<String> {
   };
 
   if output.status.success() {
-    let output_str = String::from_utf8(output.stdout).unwrap();
+    let output_str = match String::from_utf8(output.stdout) {
+      Ok(s) => s,
+      Err(e) => {
+        error!("Failed to parse stdout as UTF-8: {}", e);
+        return None;
+      }
+    };
     for line in output_str.lines() {
       let parts: Vec<&str> = line.split_whitespace().collect();
       if let Some(pid_str) = parts.last() {
         match pid_str.parse::<usize>() {
           Ok(pid) => {
             let mut system = System::new_all();
-            let proc = extract_parent_process(Pid::from(pid), &mut system).unwrap();
-            return Some(proc.exe().to_str().unwrap().to_string());
+            if let Some(proc) = extract_parent_process(Pid::from(pid), &mut system) {
+              if let Some(exe_path) = proc.exe().to_str() {
+                return Some(exe_path.to_string());
+              } else {
+                error!("Failed to convert process path to string for pid: {}", pid);
+              }
+            } else {
+              error!("Failed to extract parent process for pid: {}", pid);
+            }
           }
           Err(e) => error!("failed to parse pid: {}: {}", pid_str, e),
         }
       }
     }
   } else {
-    let error_str = String::from_utf8(output.stderr).unwrap();
-    eprintln!("エラー: {}", error_str);
+    let error_str = match String::from_utf8(output.stderr) {
+      Ok(s) => s,
+      Err(e) => {
+        error!("Failed to parse stderr as UTF-8: {}", e);
+        "Unknown error".to_string()
+      }
+    };
+    error!("Command failed: {}", error_str);
   }
   None
 }
@@ -69,15 +88,28 @@ fn extract_parent_process(pid: Pid, system: &mut System) -> Option<&Process> {
 }
 
 pub(crate) fn boot_engine(engine: Engine) -> Result<(), Box<dyn std::error::Error>> {
-  let engine_path = ENGINE_PATH.read().unwrap();
-  let path = engine_path.get(&engine).unwrap();
+  let engine_path = match ENGINE_PATH.read() {
+    Ok(ep) => ep,
+    Err(e) => {
+      return Err(format!("Failed to read ENGINE_PATH: {}", e).into());
+    }
+  };
+
+  let path = match engine_path.get(&engine) {
+    Some(p) => p,
+    None => {
+      return Err(format!("No path found for engine: {}", engine.name()).into());
+    }
+  };
 
   // do nothing when already booted
   let mut system = System::new_all();
   system.refresh_all();
   for process in system.processes().values() {
-    if process.exe().to_str().unwrap() == path {
-      return Ok(());
+    if let Some(exe_path) = process.exe().to_str() {
+      if exe_path == path {
+        return Ok(());
+      }
     }
   }
 

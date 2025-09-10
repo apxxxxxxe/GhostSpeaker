@@ -10,17 +10,35 @@ static LOG_INIT_CHECKED: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 pub(crate) fn on_second_change(_req: &PluginRequest) -> PluginResponse {
   let mut lines: Vec<String> = Vec::new();
-  if let Some(line) = CONNECTION_DIALOGS.lock().unwrap().pop() {
-    lines.push(line);
+  if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
+    if let Some(line) = dialogs.pop() {
+      lines.push(line);
+    }
   }
 
   let log_init_checked;
   {
-    log_init_checked = *LOG_INIT_CHECKED.lock().unwrap();
+    log_init_checked = match LOG_INIT_CHECKED.lock() {
+      Ok(lic) => *lic,
+      Err(e) => {
+        error!("Failed to lock LOG_INIT_CHECKED: {}", e);
+        true // フォールバック値
+      }
+    };
   }
   if !log_init_checked {
-    *LOG_INIT_CHECKED.lock().unwrap() = true;
-    if !*LOG_INIT_SUCCESS.read().unwrap() {
+    match LOG_INIT_CHECKED.lock() {
+      Ok(mut lic) => *lic = true,
+      Err(e) => error!("Failed to lock LOG_INIT_CHECKED for write: {}", e),
+    }
+    let log_init_success = match LOG_INIT_SUCCESS.read() {
+      Ok(lis) => *lis,
+      Err(e) => {
+        error!("Failed to read LOG_INIT_SUCCESS: {}", e);
+        false // フォールバック値
+      }
+    };
+    if !log_init_success {
       lines.push("ログファイルの初期化に失敗しました".to_string());
     }
   }

@@ -3,6 +3,7 @@ use crate::variables::{
   GhostVoiceInfo, ENGINE_AUTO_START, ENGINE_PATH, GHOSTS_VOICES, INITIAL_VOICE, LAST_VERSION,
   SPEAK_BY_PUNCTUATION, VAR_PATH, VOLUME,
 };
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -19,7 +20,10 @@ pub(crate) fn copy_from_raw(raw: &RawGlobalVariables) {
   // *self.initial_voice.write().unwrap() = raw.initial_voice.clone();
   // *self.last_version.write().unwrap() = raw.last_version.clone();
   if let Some(p) = raw.engine_path.clone() {
-    *ENGINE_PATH.write().unwrap() = p;
+    match ENGINE_PATH.write() {
+      Ok(mut engine_path) => *engine_path = p,
+      Err(e) => error!("Failed to write ENGINE_PATH: {}", e),
+    }
   }
   if let Some(a) = raw.engine_auto_start.clone() {
     futures::executor::block_on(async {
@@ -27,17 +31,32 @@ pub(crate) fn copy_from_raw(raw: &RawGlobalVariables) {
     });
   }
   if let Some(v) = raw.volume {
-    *VOLUME.write().unwrap() = v;
+    match VOLUME.write() {
+      Ok(mut volume) => *volume = v,
+      Err(e) => error!("Failed to write VOLUME: {}", e),
+    }
   }
   if let Some(s) = raw.speak_by_punctuation {
-    *SPEAK_BY_PUNCTUATION.write().unwrap() = s;
+    match SPEAK_BY_PUNCTUATION.write() {
+      Ok(mut speak_by_punctuation) => *speak_by_punctuation = s,
+      Err(e) => error!("Failed to write SPEAK_BY_PUNCTUATION: {}", e),
+    }
   }
   if let Some(gv) = raw.ghosts_voices.clone() {
-    *GHOSTS_VOICES.write().unwrap() = gv;
+    match GHOSTS_VOICES.write() {
+      Ok(mut ghosts_voices) => *ghosts_voices = gv,
+      Err(e) => error!("Failed to write GHOSTS_VOICES: {}", e),
+    }
   }
-  *INITIAL_VOICE.write().unwrap() = raw.initial_voice.clone();
+  match INITIAL_VOICE.write() {
+    Ok(mut initial_voice) => *initial_voice = raw.initial_voice.clone(),
+    Err(e) => error!("Failed to write INITIAL_VOICE: {}", e),
+  }
   if let Some(lv) = raw.last_version.clone() {
-    *LAST_VERSION.write().unwrap() = lv;
+    match LAST_VERSION.write() {
+      Ok(mut last_version) => *last_version = lv,
+      Err(e) => error!("Failed to write LAST_VERSION: {}", e),
+    }
   }
 }
 

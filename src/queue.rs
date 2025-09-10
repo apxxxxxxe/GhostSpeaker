@@ -23,7 +23,13 @@ pub(crate) static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
   Lazy::new(|| StdMutex::new(Vec::new()));
 
 pub(crate) static RUNTIME: Lazy<StdMutex<Option<tokio::runtime::Runtime>>> =
-  Lazy::new(|| StdMutex::new(Some(tokio::runtime::Runtime::new().unwrap())));
+  Lazy::new(|| match tokio::runtime::Runtime::new() {
+    Ok(runtime) => StdMutex::new(Some(runtime)),
+    Err(e) => {
+      error!("Failed to create tokio runtime: {}", e);
+      StdMutex::new(None)
+    }
+  });
 pub(crate) static SPEAK_HANDLERS: Lazy<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| Mutex::new(Vec::new()));
 pub(crate) static PREDICT_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
@@ -41,10 +47,25 @@ pub(crate) static SPEAK_QUEUE_STOPPER: Lazy<Arc<Mutex<bool>>> =
   Lazy::new(|| Arc::new(Mutex::new(false)));
 
 fn init_speak_queue() {
-  let mut runtime = RUNTIME.lock().unwrap();
+  let mut runtime_guard = match RUNTIME.lock() {
+    Ok(guard) => guard,
+    Err(e) => {
+      error!("Failed to lock runtime: {}", e);
+      return;
+    }
+  };
+
+  let runtime = match runtime_guard.as_mut() {
+    Some(rt) => rt,
+    None => {
+      error!("Runtime is not initialized");
+      return;
+    }
+  };
+
   let mut speak_handlers = Vec::new();
   for (engine, getter) in get_speaker_getters() {
-    let handler = runtime.as_mut().unwrap().spawn(async move {
+    let handler = runtime.spawn(async move {
       let mut consecutive_failures = 0;
       const MAX_CONSECUTIVE_FAILURES: u32 = 10; // 最大連続失敗回数
       const BACKOFF_BASE: u64 = 2; // バックオフ基数（秒）
@@ -64,16 +85,18 @@ fn init_speak_queue() {
                 || connection_status.get(&engine).is_some_and(|v| !*v)
               {
                 {
-                  CONNECTION_DIALOGS
-                    .lock()
-                    .unwrap()
-                    .push(format!("{} が接続されました", engine.name()));
+                  if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
+                    dialogs.push(format!("{} が接続されました", engine.name()));
+                  } else {
+                    error!("Failed to lock CONNECTION_DIALOGS for connection message");
+                  }
                 }
                 // 接続時、ポートを開いているプロセスのパスを記録
-                ENGINE_PATH
-                  .write()
-                  .unwrap()
-                  .insert(engine, port_opener_path);
+                if let Ok(mut engine_path) = ENGINE_PATH.write() {
+                  engine_path.insert(engine, port_opener_path);
+                } else {
+                  error!("Failed to lock ENGINE_PATH for engine: {}", engine.name());
+                }
                 let mut auto_start = ENGINE_AUTO_START.write().await;
                 if auto_start.get(&engine).is_none() {
                   auto_start.insert(engine, false);
@@ -101,10 +124,11 @@ fn init_speak_queue() {
 
               let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
               if connection_status.get(&engine).is_some_and(|v| *v) {
-                CONNECTION_DIALOGS
-                  .lock()
-                  .unwrap()
-                  .push(format!("{} が切断されました", engine.name()));
+                if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
+                  dialogs.push(format!("{} が切断されました", engine.name()));
+                } else {
+                  error!("Failed to lock CONNECTION_DIALOGS for disconnection message");
+                }
               }
               connection_status.insert(engine, false);
               SPEAKERS_INFO.write().await.remove(&engine);
@@ -124,52 +148,71 @@ fn init_speak_queue() {
 fn init_predict_queue() {
   let predict_queue_cln = PREDICT_QUEUE.clone();
   let predict_stopper_cln = PREDICT_STOPPER.clone();
-  let handler = RUNTIME.lock().unwrap().as_mut().unwrap().spawn(async move {
-    let mut last_activity = Instant::now();
-    const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
 
-    loop {
-      {
-        if predict_queue_cln.lock().await.is_empty() {
-          if *predict_stopper_cln.lock().await {
-            break;
+  let handler = {
+    let mut runtime_guard = match RUNTIME.lock() {
+      Ok(guard) => guard,
+      Err(e) => {
+        error!("Failed to lock runtime for predict queue: {}", e);
+        return;
+      }
+    };
+
+    let runtime = match runtime_guard.as_mut() {
+      Some(rt) => rt,
+      None => {
+        error!("Runtime is not initialized for predict queue");
+        return;
+      }
+    };
+
+    runtime.spawn(async move {
+      let mut last_activity = Instant::now();
+      const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
+
+      loop {
+        {
+          if predict_queue_cln.lock().await.is_empty() {
+            if *predict_stopper_cln.lock().await {
+              break;
+            }
+
+            // アイドル時間チェック
+            if last_activity.elapsed() > MAX_IDLE_TIME {
+              debug!("Predict queue idle for too long, continuing...");
+              last_activity = Instant::now();
+            }
+
+            tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
+            continue;
           }
-
-          // アイドル時間チェック
-          if last_activity.elapsed() > MAX_IDLE_TIME {
-            debug!("Predict queue idle for too long, continuing...");
-            last_activity = Instant::now();
-          }
-
-          tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
-          continue;
         }
-      }
 
-      let parg;
-      {
-        let mut guard = predict_queue_cln.lock().await;
-        parg = guard.pop_front();
-      }
+        let parg;
+        {
+          let mut guard = predict_queue_cln.lock().await;
+          parg = guard.pop_front();
+        }
 
-      match parg {
-        None => continue,
-        Some(parg) => {
-          last_activity = Instant::now(); // アクティビティ更新
-          match args_to_predictors(parg) {
-            None => continue,
-            Some(predictors) => {
-              for predictor in predictors {
-                match predictor.predict().await {
-                  Ok(res) => {
-                    debug!("pushing to play");
-                    futures::executor::block_on(async {
-                      PLAY_QUEUE.lock().await.push_back(res);
-                    });
-                    debug!("pushed to play");
-                  }
-                  Err(e) => {
-                    debug!("predict failed: {}", e);
+        match parg {
+          None => continue,
+          Some(parg) => {
+            last_activity = Instant::now(); // アクティビティ更新
+            match args_to_predictors(parg) {
+              None => continue,
+              Some(predictors) => {
+                for predictor in predictors {
+                  match predictor.predict().await {
+                    Ok(res) => {
+                      debug!("pushing to play");
+                      futures::executor::block_on(async {
+                        PLAY_QUEUE.lock().await.push_back(res);
+                      });
+                      debug!("pushed to play");
+                    }
+                    Err(e) => {
+                      debug!("predict failed: {}", e);
+                    }
                   }
                 }
               }
@@ -177,8 +220,8 @@ fn init_predict_queue() {
           }
         }
       }
-    }
-  });
+    })
+  };
   futures::executor::block_on(async {
     *PREDICT_HANDLER.lock().await = Some(handler);
   });
@@ -187,44 +230,63 @@ fn init_predict_queue() {
 pub(crate) fn init_play_queue() {
   let play_queue_cln = PLAY_QUEUE.clone();
   let play_stopper_cln = PLAY_STOPPER.clone();
-  let handler = RUNTIME.lock().unwrap().as_mut().unwrap().spawn(async move {
-    let mut last_activity = Instant::now();
-    const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
 
-    loop {
-      {
-        if play_queue_cln.lock().await.is_empty() {
-          if *play_stopper_cln.lock().await {
-            break;
+  let handler = {
+    let mut runtime_guard = match RUNTIME.lock() {
+      Ok(guard) => guard,
+      Err(e) => {
+        error!("Failed to lock runtime for play queue: {}", e);
+        return;
+      }
+    };
+
+    let runtime = match runtime_guard.as_mut() {
+      Some(rt) => rt,
+      None => {
+        error!("Runtime is not initialized for play queue");
+        return;
+      }
+    };
+
+    runtime.spawn(async move {
+      let mut last_activity = Instant::now();
+      const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
+
+      loop {
+        {
+          if play_queue_cln.lock().await.is_empty() {
+            if *play_stopper_cln.lock().await {
+              break;
+            }
+
+            // アイドル時間チェック
+            if last_activity.elapsed() > MAX_IDLE_TIME {
+              debug!("Play queue idle for too long, continuing...");
+              last_activity = Instant::now();
+            }
+
+            tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
+            continue;
           }
+        }
 
-          // アイドル時間チェック
-          if last_activity.elapsed() > MAX_IDLE_TIME {
-            debug!("Play queue idle for too long, continuing...");
-            last_activity = Instant::now();
+        let wav;
+        {
+          let mut guard = play_queue_cln.lock().await;
+          wav = guard.pop_front();
+        }
+        if let Some(data) = wav {
+          if !data.is_empty() {
+            last_activity = Instant::now(); // アクティビティ更新
+            debug!("{}", format!("play: {}", data.len()));
+            if let Err(e) = play_wav(data) {
+              error!("play_wav failed: {}", e);
+            };
           }
-
-          tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
-          continue;
         }
       }
-
-      let wav;
-      {
-        let mut guard = play_queue_cln.lock().await;
-        wav = guard.pop_front();
-      }
-      if let Some(data) = wav {
-        if !data.is_empty() {
-          last_activity = Instant::now(); // アクティビティ更新
-          debug!("{}", format!("play: {}", data.len()));
-          if let Err(e) = play_wav(data) {
-            error!("play_wav failed: {}", e);
-          };
-        }
-      }
-    }
-  });
+    })
+  };
   futures::executor::block_on(async {
     *PLAY_HANDLER.lock().await = Some(handler);
   });

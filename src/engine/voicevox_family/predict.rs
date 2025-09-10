@@ -36,7 +36,13 @@ impl Predictor for VoicevoxFamilyPredictor {
     {
       Ok(res) => match res.status() {
         StatusCode::OK => {
-          synthesis_req = res.bytes().await.unwrap().to_vec();
+          synthesis_req = match res.bytes().await {
+            Ok(bytes) => bytes.to_vec(),
+            Err(e) => {
+              error!("Failed to read audio_query response bytes: {}", e);
+              return Err(Box::new(e));
+            }
+          };
         }
         _ => {
           println!("Error: {:?}", res);
@@ -61,7 +67,13 @@ impl Predictor for VoicevoxFamilyPredictor {
     {
       Ok(res) => match res.status() {
         StatusCode::OK => {
-          wav = res.bytes().await.unwrap().to_vec();
+          wav = match res.bytes().await {
+            Ok(bytes) => bytes.to_vec(),
+            Err(e) => {
+              error!("Failed to read synthesis response bytes: {}", e);
+              return Err(Box::new(e));
+            }
+          };
         }
         _ => {
           println!("Error: {:?}", res);

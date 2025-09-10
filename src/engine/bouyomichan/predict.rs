@@ -18,7 +18,13 @@ impl BouyomichanPredictor {
 #[async_trait]
 impl Predictor for BouyomichanPredictor {
   async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let volume: i16 = (100.0 * (*VOLUME.read().unwrap())) as i16;
+    let volume: i16 = match VOLUME.read() {
+      Ok(v) => (100.0 * *v) as i16,
+      Err(e) => {
+        error!("Failed to read VOLUME, using default: {}", e);
+        100 // デフォルト音量
+      }
+    };
     speak(&self.text, self.style_id as i16, volume)?;
     Ok(Vec::new())
   }

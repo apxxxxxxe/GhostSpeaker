@@ -22,11 +22,11 @@ enum CharacterResizeMode {
 }
 
 impl CharacterResizeMode {
-  fn from_usize(n: usize) -> Self {
+  fn from_usize(n: usize) -> Result<Self, String> {
     match n {
-      0 => Self::Expand,
-      1 => Self::Shrink,
-      _ => panic!("Invalid mode: {}", n),
+      0 => Ok(Self::Expand),
+      1 => Ok(Self::Shrink),
+      _ => Err(format!("Invalid mode: {}", n)),
     }
   }
 }
@@ -56,13 +56,37 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   let mut division_setting = String::from("-");
 
   let refs = get_references(req);
-  let ghost_name = refs.get(1).unwrap().to_string();
-  let ghost_description = load_descript(refs.get(4).unwrap().to_string());
+  let ghost_name = match refs.get(1) {
+    Some(name) => name.to_string(),
+    None => {
+      error!("Missing ghost name in references");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let ghost_description = match refs.get(4) {
+    Some(path) => load_descript(path.to_string()),
+    None => {
+      error!("Missing ghost path in references");
+      HashMap::new()
+    }
+  };
   let characters = count_characters(ghost_description);
   let path_for_arg = refs[4].to_string().replace('\\', "\\\\");
   debug!("getting ghosts_voices");
-  let ghosts_voices = GHOSTS_VOICES.read().unwrap();
-  let character_voices = &ghosts_voices.get(&ghost_name).unwrap().voices;
+  let ghosts_voices = match GHOSTS_VOICES.read() {
+    Ok(gv) => gv,
+    Err(e) => {
+      error!("Failed to read GHOSTS_VOICES: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_voices = match ghosts_voices.get(&ghost_name) {
+    Some(info) => &info.voices,
+    None => {
+      error!("Ghost not found in GHOSTS_VOICES: {}", ghost_name);
+      return new_response_with_script(String::new(), false);
+    }
+  };
   debug!("success to get ghosts_voices");
 
   debug!("getting speakers_info");
@@ -146,10 +170,16 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   }
 
   let unit: f32 = 0.05;
-  let v = VOLUME.read().unwrap();
+  let v = match VOLUME.read() {
+    Ok(volume) => *volume,
+    Err(e) => {
+      error!("Failed to read VOLUME: {}", e);
+      1.0 // デフォルト音量
+    }
+  };
 
   let mut volume_changer = String::new();
-  if *v > unit {
+  if v > unit {
     volume_changer.push_str(&format!(
       "\\__q[OnVolumeChange,-{},{},{}]{}\\__q",
       unit,
@@ -169,8 +199,14 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     decorated(">>", "bold"),
   ));
 
-  let p = SPEAK_BY_PUNCTUATION.read().unwrap();
-  let switch = if *p {
+  let p = match SPEAK_BY_PUNCTUATION.read() {
+    Ok(sbp) => *sbp,
+    Err(e) => {
+      error!("Failed to read SPEAK_BY_PUNCTUATION: {}", e);
+      true // デフォルト値
+    }
+  };
+  let switch = if p {
     ACTIVATED.to_string()
   } else {
     DEACTIVATED.to_string()
@@ -186,7 +222,13 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     "【現在 \\__q[OnDefaultVoiceSelecting,{},{}]{}\\__q】\\n",
     ghost_name,
     path_for_arg,
-    get_voice(&Some(INITIAL_VOICE.read().unwrap().clone())),
+    match INITIAL_VOICE.read() {
+      Ok(iv) => get_voice(&Some(iv.clone())),
+      Err(e) => {
+        error!("Failed to read INITIAL_VOICE: {}", e);
+        get_voice(&None) // フォールバック
+      }
+    },
   );
 
   let m = format!(
@@ -270,7 +312,8 @@ fn get_voice(c: &Option<CharacterVoice>) -> String {
   let speakers_info = futures::executor::block_on(async { SPEAKERS_INFO.read().await.clone() });
   if c.speaker_uuid == NO_VOICE_UUID {
     voice = NO_VOICE.to_string();
-  } else if let Some(speakers_by_engine) = speakers_info.get(&(engine_from_port(c.port).unwrap())) {
+  } else if let Some(engine) = engine_from_port(c.port) {
+    if let Some(speakers_by_engine) = speakers_info.get(&engine) {
     if let Some(speaker) = speakers_by_engine
       .iter()
       .find(|s| s.speaker_uuid == c.speaker_uuid)
@@ -278,20 +321,21 @@ fn get_voice(c: &Option<CharacterVoice>) -> String {
       if let Some(style) = speaker
         .styles
         .iter()
-        .find(|s| s.style_id.unwrap() == c.style_id)
+        .find(|s| s.style_id.unwrap_or(-1) == c.style_id)
       {
         voice = format!(
           "{} - {}",
           speaker.speaker_name,
-          style.style_name.clone().unwrap(),
+          style.style_name.clone().unwrap_or_else(|| "不明なスタイル".to_string()),
         );
       }
     }
-  } else {
-    voice = grayed(&format!(
-      "【使用不可: {}の起動が必要】",
-      engine_from_port(c.port).unwrap().name()
-    ));
+    } else {
+      voice = grayed(&format!(
+        "【使用不可: {}の起動が必要】",
+        engine_from_port(c.port).map_or("不明なエンジン", |e| e.name())
+      ));
+    }
   }
   voice
 }
@@ -326,12 +370,12 @@ fn list_callback_for_characters(
       format!(
         "\\![*]\\q[{} | {},OnVoiceSelected,{},{},{},{},{},{}]\\n",
         speaker.speaker_name,
-        style.style_name.as_ref().unwrap(),
+        style.style_name.as_ref().unwrap_or(&"不明なスタイル".to_string()),
         ghost_name,
         character_index,
         engine.port(),
         speaker.speaker_uuid,
-        style.style_id.unwrap(),
+        style.style_id.unwrap_or(-1),
         ghost_path,
       )
     },
@@ -347,10 +391,40 @@ fn list_callback_for_characters(
 
 pub(crate) fn on_voice_selecting(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
-  let ghost_name = refs.first().unwrap();
-  let character_name = refs.get(1).unwrap();
-  let character_index = refs.get(2).unwrap().parse::<usize>().unwrap();
-  let ghost_path = refs.get(3).unwrap();
+  let ghost_name = match refs.first() {
+    Some(name) => name,
+    None => {
+      error!("Missing ghost_name parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_name = match refs.get(1) {
+    Some(name) => name,
+    None => {
+      error!("Missing character_name parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_index = match refs.get(2) {
+    Some(index_str) => match index_str.parse::<usize>() {
+      Ok(index) => index,
+      Err(e) => {
+        error!("Failed to parse character_index: {}", e);
+        return new_response_with_script(String::new(), false);
+      }
+    },
+    None => {
+      error!("Missing character_index parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let ghost_path = match refs.get(3) {
+    Some(path) => path,
+    None => {
+      error!("Missing ghost_path parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
 
   let callback = list_callback_for_characters(
     ghost_name.to_string(),
@@ -365,26 +439,88 @@ pub(crate) fn on_voice_selecting(req: &PluginRequest) -> PluginResponse {
 
 pub(crate) fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
-  let ghost_name = refs.first().unwrap();
-  let character_index = refs.get(1).unwrap().parse::<usize>().unwrap();
-  let port = refs.get(2).unwrap();
-  let speaker_uuid = refs.get(3).unwrap();
-  let style_id = refs.get(4).unwrap();
-  let ghost_path = refs.get(5).unwrap();
-
-  let voice = CharacterVoice {
-    port: port.to_string().parse::<i32>().unwrap(),
-    speaker_uuid: speaker_uuid.to_string(),
-    style_id: style_id.to_string().parse::<i32>().unwrap(),
+  let ghost_name = match refs.first() {
+    Some(name) => name,
+    None => {
+      error!("Missing ghost_name parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_index = match refs.get(1) {
+    Some(index_str) => match index_str.parse::<usize>() {
+      Ok(index) => index,
+      Err(e) => {
+        error!("Failed to parse character_index: {}", e);
+        return new_response_with_script(String::new(), false);
+      }
+    },
+    None => {
+      error!("Missing character_index parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let port = match refs.get(2) {
+    Some(port) => port,
+    None => {
+      error!("Missing port parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let speaker_uuid = match refs.get(3) {
+    Some(uuid) => uuid,
+    None => {
+      error!("Missing speaker_uuid parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let style_id = match refs.get(4) {
+    Some(id) => id,
+    None => {
+      error!("Missing style_id parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let ghost_path = match refs.get(5) {
+    Some(path) => path,
+    None => {
+      error!("Missing ghost_path parameter");
+      return new_response_with_script(String::new(), false);
+    }
   };
 
-  if let Some(info) = GHOSTS_VOICES.write().unwrap().get_mut(*ghost_name) {
+  let voice = CharacterVoice {
+    port: match port.to_string().parse::<i32>() {
+      Ok(p) => p,
+      Err(e) => {
+        error!("Failed to parse port in on_voice_selected: {}", e);
+        return new_response_with_script(String::new(), false);
+      }
+    },
+    speaker_uuid: speaker_uuid.to_string(),
+    style_id: match style_id.to_string().parse::<i32>() {
+      Ok(id) => id,
+      Err(e) => {
+        error!("Failed to parse style_id in on_voice_selected: {}", e);
+        return new_response_with_script(String::new(), false);
+      }
+    },
+  };
+
+  let mut ghosts_voices = match GHOSTS_VOICES.write() {
+    Ok(gv) => gv,
+    Err(e) => {
+      error!("Failed to write GHOSTS_VOICES: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  if let Some(info) = ghosts_voices.get_mut(*ghost_name) {
     let voices = &mut info.voices;
     voices.remove(character_index);
     voices.insert(character_index, Some(voice))
   } else {
     // OnGhostBootで設定されているはず
-    panic!("Ghost {} not found", ghost_name);
+    error!("Ghost {} not found", ghost_name);
+    return new_response_with_script(String::new(), false);
   }
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
@@ -397,8 +533,23 @@ pub(crate) fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
 
 pub(crate) fn on_volume_change(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
-  let volume: f32 = refs.first().unwrap().parse().unwrap();
-  *VOLUME.write().unwrap() += volume;
+  let volume: f32 = match refs.first() {
+    Some(vol_str) => match vol_str.parse() {
+      Ok(v) => v,
+      Err(e) => {
+        error!("Failed to parse volume: {}", e);
+        return new_response_with_script(String::new(), false);
+      }
+    },
+    None => {
+      error!("Missing volume parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  match VOLUME.write() {
+    Ok(mut v) => *v += volume,
+    Err(e) => error!("Failed to write VOLUME: {}", e),
+  }
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
     PLUGIN_UUID, refs[1], refs[2]
@@ -417,10 +568,10 @@ fn list_callback_for_defaultvoices(
       format!(
         "\\![*]\\q[{} | {},OnDefaultVoiceSelected,{},{},{},{},{}]\\n",
         speaker.speaker_name,
-        style.style_name.as_ref().unwrap(),
+        style.style_name.as_ref().unwrap_or(&"不明なスタイル".to_string()),
         engine.port(),
         speaker.speaker_uuid,
-        style.style_id.unwrap(),
+        style.style_id.unwrap_or(-1),
         ghost_name,
         ghost_path,
       )
@@ -437,8 +588,20 @@ fn list_callback_for_defaultvoices(
 
 pub(crate) fn on_default_voice_selecting(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
-  let ghost_name = refs.first().unwrap();
-  let ghost_path = refs.get(1).unwrap();
+  let ghost_name = match refs.first() {
+    Some(name) => name,
+    None => {
+      error!("Missing ghost_name parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let ghost_path = match refs.get(1) {
+    Some(path) => path,
+    None => {
+      error!("Missing ghost_path parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
   let callback = list_callback_for_defaultvoices(ghost_name.to_string(), ghost_path.to_string());
   let mut m = "\\_qデフォルトボイスの設定\\n".to_string();
   m.push_str(list_available_voices(callback).as_str());
@@ -448,20 +611,65 @@ pub(crate) fn on_default_voice_selecting(req: &PluginRequest) -> PluginResponse 
 
 pub(crate) fn on_default_voice_selected(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
-  let port = refs.first().unwrap();
-  let speaker_uuid = refs.get(1).unwrap();
-  let style_id = refs.get(2).unwrap();
-  let ghost_name = refs.get(3).unwrap();
-  let ghost_path = refs.get(4).unwrap();
+  let port = match refs.first() {
+    Some(port) => port,
+    None => {
+      error!("Missing port parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let speaker_uuid = match refs.get(1) {
+    Some(uuid) => uuid,
+    None => {
+      error!("Missing speaker_uuid parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let style_id = match refs.get(2) {
+    Some(id) => id,
+    None => {
+      error!("Missing style_id parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let ghost_name = match refs.get(3) {
+    Some(name) => name,
+    None => {
+      error!("Missing ghost_name parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let ghost_path = match refs.get(4) {
+    Some(path) => path,
+    None => {
+      error!("Missing ghost_path parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
   let path_for_arg = ghost_path.replace('\\', "\\\\");
 
   let voice = CharacterVoice {
-    port: port.to_string().parse::<i32>().unwrap(),
+    port: match port.to_string().parse::<i32>() {
+      Ok(p) => p,
+      Err(e) => {
+        error!("Failed to parse port in on_default_voice_selected: {}", e);
+        return new_response_with_script(String::new(), false);
+      }
+    },
     speaker_uuid: speaker_uuid.to_string(),
-    style_id: style_id.to_string().parse::<i32>().unwrap(),
+    style_id: match style_id.to_string().parse::<i32>() {
+      Ok(id) => id,
+      Err(e) => {
+        error!("Failed to parse style_id in on_default_voice_selected: {}", e);
+        return new_response_with_script(String::new(), false);
+      }
+    },
   };
 
-  *INITIAL_VOICE.write().unwrap() = voice;
+  match INITIAL_VOICE.write() {
+    Ok(mut iv) => *iv = voice,
+    Err(e) => error!("Failed to write INITIAL_VOICE: {}", e),
+  }
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
     PLUGIN_UUID, ghost_name, path_for_arg
@@ -473,7 +681,14 @@ pub(crate) fn on_division_setting_changed(req: &PluginRequest) -> PluginResponse
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
-  if let Some(info) = GHOSTS_VOICES.write().unwrap().get_mut(&ghost_name) {
+  let mut ghosts_voices = match GHOSTS_VOICES.write() {
+    Ok(gv) => gv,
+    Err(e) => {
+      error!("Failed to write GHOSTS_VOICES: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  if let Some(info) = ghosts_voices.get_mut(&ghost_name) {
     info.devide_by_lines = !info.devide_by_lines
   }
 
@@ -488,7 +703,13 @@ pub(crate) fn on_punctuation_setting_changed(req: &PluginRequest) -> PluginRespo
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let path_for_arg = refs[1].to_string();
-  let mut sbp = SPEAK_BY_PUNCTUATION.write().unwrap();
+  let mut sbp = match SPEAK_BY_PUNCTUATION.write() {
+    Ok(s) => s,
+    Err(e) => {
+      error!("Failed to write SPEAK_BY_PUNCTUATION: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
   *sbp = !*sbp;
 
   let script = format!(
@@ -500,11 +721,23 @@ pub(crate) fn on_punctuation_setting_changed(req: &PluginRequest) -> PluginRespo
 
 pub(crate) fn on_auto_start_toggled(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
-  let port = refs[0].parse::<i32>().unwrap();
+  let port = match refs[0].parse::<i32>() {
+    Ok(p) => p,
+    Err(e) => {
+      error!("Failed to parse port: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
   let ghost_name = refs[1].to_string();
   let path_for_arg = refs[2].to_string();
 
-  let engine = engine_from_port(port).unwrap();
+  let engine = match engine_from_port(port) {
+    Some(e) => e,
+    None => {
+      error!("Unknown engine for port: {}", port);
+      return new_response_with_script(String::new(), false);
+    }
+  };
   if let Some(auto_start) =
     futures::executor::block_on(async { ENGINE_AUTO_START.write().await }).get_mut(&engine)
   {
@@ -522,24 +755,36 @@ pub(crate) fn on_character_resized(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let ghost_path = refs[1].to_string();
-  let mode: usize = refs[2].parse().unwrap();
+  let mode: usize = match refs[2].parse() {
+    Ok(m) => m,
+    Err(e) => {
+      error!("Failed to parse mode: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
   let description_characters = count_characters(load_descript(ghost_path.clone()));
-  let characters = GHOSTS_VOICES
-    .write()
-    .unwrap()
-    .get(&ghost_name)
-    .unwrap()
-    .voices
-    .clone();
+  let characters = match GHOSTS_VOICES.write() {
+    Ok(gv) => match gv.get(&ghost_name) {
+      Some(info) => info.voices.clone(),
+      None => {
+        error!("Ghost {} not found", ghost_name);
+        return new_response_with_script(String::new(), false);
+      }
+    },
+    Err(e) => {
+      error!("Failed to read GHOSTS_VOICES: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
   let mut new_characters = Vec::new();
   match CharacterResizeMode::from_usize(mode) {
-    CharacterResizeMode::Expand => {
+    Ok(CharacterResizeMode::Expand) => {
       for c in characters.iter() {
         new_characters.push(c.clone());
       }
       new_characters.push(None);
     }
-    CharacterResizeMode::Shrink => {
+    Ok(CharacterResizeMode::Shrink) => {
       if characters.len() > description_characters.len() {
         for c in characters.iter().take(characters.len() - 1) {
           new_characters.push(c.clone());
@@ -550,13 +795,24 @@ pub(crate) fn on_character_resized(req: &PluginRequest) -> PluginResponse {
         }
       }
     }
+    Err(e) => {
+      error!("Invalid character resize mode: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
   }
-  GHOSTS_VOICES
-    .write()
-    .unwrap()
-    .get_mut(&ghost_name)
-    .unwrap()
-    .voices = new_characters;
+  match GHOSTS_VOICES.write() {
+    Ok(mut gv) => match gv.get_mut(&ghost_name) {
+      Some(info) => info.voices = new_characters,
+      None => {
+        error!("Ghost {} not found for character resize", ghost_name);
+        return new_response_with_script(String::new(), false);
+      }
+    },
+    Err(e) => {
+      error!("Failed to write GHOSTS_VOICES for character resize: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  }
 
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",

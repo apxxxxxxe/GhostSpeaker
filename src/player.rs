@@ -15,7 +15,14 @@ pub(crate) static FORCE_STOP_SINK: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(f
 pub(crate) fn play_wav(wav: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
   let (_stream, handle) = OutputStream::try_default()?;
   let sink = Sink::try_new(&handle)?;
-  sink.set_volume(*VOLUME.read().unwrap());
+  let volume = match VOLUME.read() {
+    Ok(v) => *v,
+    Err(e) => {
+      error!("Failed to read volume: {}", e);
+      1.0 // デフォルト音量
+    }
+  };
+  sink.set_volume(volume);
   let file = BufReader::new(Cursor::new(wav));
   match Decoder::new(file) {
     Ok(source) => {
@@ -35,12 +42,19 @@ pub(crate) fn play_wav(wav: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
 
     std::thread::sleep(std::time::Duration::from_millis(100));
     {
-      let mut force_stop = FORCE_STOP_SINK.lock().unwrap();
-      if *force_stop {
-        sink.pause();
-        sink.stop();
-        *force_stop = false;
-        return Ok(());
+      match FORCE_STOP_SINK.lock() {
+        Ok(mut force_stop) => {
+          if *force_stop {
+            sink.pause();
+            sink.stop();
+            *force_stop = false;
+            return Ok(());
+          }
+        }
+        Err(e) => {
+          error!("Failed to lock FORCE_STOP_SINK: {}", e);
+          // 強制停止の確認ができない場合は継続
+        }
       }
     }
   }
