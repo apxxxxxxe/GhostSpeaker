@@ -40,7 +40,7 @@ pub(crate) fn play_wav(wav: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
       return Ok(());
     }
 
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    std::thread::sleep(std::time::Duration::from_millis(50));
     {
       match FORCE_STOP_SINK.lock() {
         Ok(mut force_stop) => {

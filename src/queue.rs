@@ -11,7 +11,8 @@ use once_cell::sync::Lazy;
 use std::time::{Duration, Instant};
 
 // タイムアウト定数
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(8);
+const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const QUEUE_POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 use std::collections::VecDeque;
@@ -305,80 +306,68 @@ pub(crate) fn stop_queues() -> Result<
   >,
 > {
   debug!("{}", "stopping queue");
-  {
-    // stop signals
-    futures::executor::block_on(async {
-      // speak_handler の停止
-      *SPEAK_QUEUE_STOPPER.lock().await = true; // 停止フラグ設定
-      for handler in SPEAK_HANDLERS.lock().await.iter() {
-        handler.abort();
-      }
-      debug!("{}", "stopped speak");
-      // predict_handler の停止
-      {
-        *PREDICT_STOPPER.lock().await = true;
-      }
-      let start_time = Instant::now();
-      loop {
-        {
-          let predict_stopped = if let Some(handler) = &*PREDICT_HANDLER.lock().await {
-            handler.is_finished()
-          } else {
-            true
-          };
-          if predict_stopped {
-            break;
-          }
-        }
-
-        // タイムアウトチェック
-        if start_time.elapsed() >= SHUTDOWN_TIMEOUT {
-          error!("Predict handler shutdown timeout exceeded, forcing abort");
-          if let Some(handler) = PREDICT_HANDLER.lock().await.as_ref() {
-            handler.abort();
-          }
-          break;
-        }
-
-        std::thread::sleep(QUEUE_POLL_TIMEOUT);
-        debug!("{}", "stopping predict");
-      }
-      debug!("{}", "stopped predict");
-      // play_handler の停止
-      {
-        *PLAY_STOPPER.lock().await = true;
-      }
-      let start_time = Instant::now();
-      loop {
-        {
-          let play_stopped = if let Some(handler) = &*PLAY_HANDLER.lock().await {
-            handler.is_finished()
-          } else {
-            true
-          };
-          if play_stopped {
-            break;
-          }
-        }
-
-        // タイムアウトチェック
-        if start_time.elapsed() >= SHUTDOWN_TIMEOUT {
-          error!("Play handler shutdown timeout exceeded, forcing abort");
-          if let Some(handler) = PLAY_HANDLER.lock().await.as_ref() {
-            handler.abort();
-          }
-          break;
-        }
-
-        debug!("{}", "stopping play");
-        std::thread::sleep(QUEUE_POLL_TIMEOUT);
-      }
-      debug!("{}", "stopped play");
-    });
+  
+  // 音声再生を即座に強制停止
+  if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
+    *force_stop = true;
+    debug!("{}", "set force stop sink flag");
+  } else {
+    error!("Failed to set FORCE_STOP_SINK flag");
   }
+  
+  // 全停止フラグを設定（協調的停止の開始）
+  futures::executor::block_on(async {
+    *PLAY_STOPPER.lock().await = true;
+    *PREDICT_STOPPER.lock().await = true;
+    *SPEAK_QUEUE_STOPPER.lock().await = true;
+    debug!("{}", "set all stop flags");
+  });
+  
+  // 協調的停止を待機（abort()は使用しない）
+  let start_time = Instant::now();
+  while start_time.elapsed() < GRACEFUL_SHUTDOWN_TIMEOUT {
+    // 全タスクの完了状況を確認
+    let (play_stopped, predict_stopped, speak_stopped) = futures::executor::block_on(async {
+      let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
+      let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
+      let speak_stopped = SPEAK_HANDLERS.lock().await.iter().all(|h| h.is_finished());
+      (play_stopped, predict_stopped, speak_stopped)
+    });
+    
+    if play_stopped && predict_stopped && speak_stopped {
+      debug!("{}", "all tasks stopped gracefully");
+      break;
+    }
+    
+    // 進行状況をログ出力
+    if !play_stopped {
+      debug!("{}", "waiting for play handler to finish");
+    }
+    if !predict_stopped {
+      debug!("{}", "waiting for predict handler to finish");
+    }
+    if !speak_stopped {
+      debug!("{}", "waiting for speak handlers to finish");
+    }
+    
+    std::thread::sleep(Duration::from_millis(200));
+  }
+  
+  // タイムアウト時もabortはせず、警告のみ
+  if start_time.elapsed() >= GRACEFUL_SHUTDOWN_TIMEOUT {
+    warn!("Some tasks did not stop within timeout, proceeding with shutdown");
+    let (play_stopped, predict_stopped, speak_stopped) = futures::executor::block_on(async {
+      let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
+      let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
+      let speak_stopped = SPEAK_HANDLERS.lock().await.iter().all(|h| h.is_finished());
+      (play_stopped, predict_stopped, speak_stopped)
+    });
+    warn!("Task status - play: {}, predict: {}, speak: {}", play_stopped, predict_stopped, speak_stopped);
+  }
+  
   debug!("{}", "stopped queue");
   if let Some(runtime) = RUNTIME.lock()?.take() {
-    runtime.shutdown_background();
+    runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
   }
   Ok(())
 }
