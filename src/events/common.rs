@@ -57,7 +57,13 @@ pub(crate) fn load_descript(file_path: String) -> HashMap<String, String> {
     .join("ghost")
     .join("master")
     .join("descript.txt");
-  let buffer = fs::read(path).unwrap();
+  let buffer = match fs::read(path) {
+    Ok(b) => b,
+    Err(e) => {
+      error!("Failed to read descript.txt: {}", e);
+      return descript; // 空のHashMapを返す
+    }
+  };
   let mut result = SHIFT_JIS.decode(&buffer).0;
 
   // TODO: more smart way to detect charset
@@ -76,8 +82,14 @@ pub(crate) fn load_descript(file_path: String) -> HashMap<String, String> {
       continue;
     }
     let mut iter = line.split(',');
-    let key = iter.next().unwrap().to_string();
-    let mut value = iter.next().unwrap().to_string();
+    let key = match iter.next() {
+      Some(k) => k.to_string(),
+      None => continue, // 無効な行をスキップ
+    };
+    let mut value = match iter.next() {
+      Some(v) => v.to_string(),
+      None => continue, // 無効な行をスキップ
+    };
     for v in iter {
       value.push_str(v);
     }

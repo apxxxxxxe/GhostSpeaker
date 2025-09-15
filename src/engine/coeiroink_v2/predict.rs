@@ -61,7 +61,13 @@ impl Predictor for CoeiroinkV2Predictor {
       prosody_detail: None,
       speed_scale: 1.0,
     };
-    let b = serde_json::to_string(&req).unwrap();
+    let b = match serde_json::to_string(&req) {
+      Ok(json) => json,
+      Err(e) => {
+        error!("Failed to serialize predict request: {}", e);
+        return Err(Box::new(e));
+      }
+    };
 
     let wav: Vec<u8>;
     match reqwest::Client::new()
@@ -74,7 +80,13 @@ impl Predictor for CoeiroinkV2Predictor {
     {
       Ok(res) => match res.status() {
         StatusCode::OK => {
-          wav = res.bytes().await.unwrap().to_vec();
+          wav = match res.bytes().await {
+            Ok(bytes) => bytes.to_vec(),
+            Err(e) => {
+              error!("Failed to read response bytes: {}", e);
+              return Err(Box::new(e));
+            }
+          };
         }
         _ => {
           println!("Error: {:?}", res);

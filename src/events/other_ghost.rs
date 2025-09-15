@@ -26,7 +26,13 @@ pub(crate) fn on_ghost_boot(req: &PluginRequest) -> PluginResponse {
   let description = load_descript(path);
   let characters = count_characters(description);
 
-  let mut ghosts_voices = GHOSTS_VOICES.write().unwrap();
+  let mut ghosts_voices = match GHOSTS_VOICES.write() {
+    Ok(gv) => gv,
+    Err(e) => {
+      error!("Failed to write GHOSTS_VOICES: {}", e);
+      return new_response_nocontent();
+    }
+  };
   if ghosts_voices.get(&ghost_name).is_none() {
     ghosts_voices.insert(ghost_name, GhostVoiceInfo::new(characters.len()));
   }
