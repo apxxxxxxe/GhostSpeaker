@@ -3,11 +3,11 @@ use crate::format::scope_to_tag;
 use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::queue::{
-  build_segments, cancel_sync_playback, is_sync_audio_done, push_to_prediction,
-  spawn_sync_playback, sync_predict, SyncPlaybackState, SYNC_STATE,
+  build_segments, cancel_sync_playback, is_sync_audio_done, pop_ready_segment,
+  push_to_prediction, spawn_sync_playback, spawn_sync_prediction, sync_predict,
+  SYNC_STATE,
 };
 use crate::variables::*;
-use std::collections::VecDeque;
 
 pub(crate) fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
@@ -47,18 +47,15 @@ pub(crate) fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
     }
   };
 
-  let mut seg_deque: VecDeque<_> = segments.into();
-  let first = seg_deque.pop_front().unwrap();
+  let mut segments = segments;
+  let first = segments.remove(0);
 
   // 最初のセグメント: 合成 → 再生開始
   let wav = sync_predict(&*first.predictor).unwrap_or_default();
   spawn_sync_playback(wav);
 
-  // 残りをステートに保存
-  *SYNC_STATE.lock().unwrap() = Some(SyncPlaybackState {
-    segments: seg_deque,
-    ghost_name: ghost_name.clone(),
-  });
+  // 残りセグメントのバックグラウンド合成を開始
+  spawn_sync_prediction(segments, ghost_name.clone());
 
   // スクリプト返却: scopeタグ + テキスト + raiseplugin
   let script = format!(
@@ -75,57 +72,51 @@ pub(crate) fn on_sync_speech_continue(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
 
-  // 音声がまだ再生中 → ポーリング(450ms後にリトライ)
+  // 音声がまだ再生中 → ポーリング(200ms後にリトライ)
   if !is_sync_audio_done() {
     let script = format!(
-      "\\w9\\![raiseplugin,{},OnSyncSpeechContinue,{}]",
+      "\\C\\_w[200]\\![raiseplugin,{},OnSyncSpeechContinue,{}]",
       PLUGIN_UUID, ghost_name,
     );
     return new_response_with_script(script, false);
   }
 
-  // 次のセグメントを取得
-  let next = {
-    let mut state = SYNC_STATE.lock().unwrap();
-    match state.as_mut() {
-      Some(s) if s.ghost_name == ghost_name => s.segments.pop_front(),
-      _ => None,
-    }
-  };
+  // プールから合成済みセグメントを取得
+  let (segment, has_more) = pop_ready_segment(&ghost_name);
 
-  match next {
-    Some(segment) => {
-      // 合成 → 再生開始
-      let wav = sync_predict(&*segment.predictor).unwrap_or_default();
-      spawn_sync_playback(wav);
-
-      // 残りセグメントがあるか確認
-      let has_more = SYNC_STATE
-        .lock()
-        .unwrap()
-        .as_ref()
-        .map(|s| !s.segments.is_empty())
-        .unwrap_or(false);
+  match segment {
+    Some(seg) => {
+      // 再生開始
+      spawn_sync_playback(seg.wav);
 
       let script = if has_more {
         format!(
           "\\C{}{}\\![raiseplugin,{},OnSyncSpeechContinue,{}]",
-          scope_to_tag(segment.scope),
-          segment.text,
+          scope_to_tag(seg.scope),
+          seg.text,
           PLUGIN_UUID,
           ghost_name,
         )
       } else {
         // 最後のセグメント → チェーン終了、ステートクリア
         *SYNC_STATE.lock().unwrap() = None;
-        format!("\\C{}{}", scope_to_tag(segment.scope), segment.text)
+        format!("\\C{}{}", scope_to_tag(seg.scope), seg.text)
       };
       new_response_with_script(script, false)
     }
     None => {
-      // 異常系: セグメントなし → ステートクリアしてNoContent
-      *SYNC_STATE.lock().unwrap() = None;
-      new_response_nocontent()
+      if has_more {
+        // まだ合成中 → ポーリング継続
+        let script = format!(
+          "\\C\\_w[200]\\![raiseplugin,{},OnSyncSpeechContinue,{}]",
+          PLUGIN_UUID, ghost_name,
+        );
+        new_response_with_script(script, false)
+      } else {
+        // 異常系: セグメントなし & 合成完了 → ステートクリアしてNoContent
+        *SYNC_STATE.lock().unwrap() = None;
+        new_response_nocontent()
+      }
     }
   }
 }

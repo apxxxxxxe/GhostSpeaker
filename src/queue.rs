@@ -512,9 +512,16 @@ pub(crate) fn build_segments(
   Some(segments)
 }
 
+pub(crate) struct SyncReadySegment {
+  pub text: String,
+  pub scope: usize,
+  pub wav: Vec<u8>,
+}
+
 pub(crate) struct SyncPlaybackState {
-  pub segments: VecDeque<SyncSegment>,
+  pub ready_queue: VecDeque<SyncReadySegment>,
   pub ghost_name: String,
+  pub all_predicted: bool,
 }
 
 pub(crate) static SYNC_STATE: Lazy<StdMutex<Option<SyncPlaybackState>>> =
@@ -563,5 +570,64 @@ pub(crate) fn cancel_sync_playback() {
   *SYNC_STATE.lock().unwrap() = None;
   if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
     *force_stop = true;
+  }
+}
+
+/// 同期モード用: 全セグメントをバックグラウンドで順次合成し、プールに蓄積する
+pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: String) {
+  // SYNC_STATE を初期化（空の ready_queue）
+  *SYNC_STATE.lock().unwrap() = Some(SyncPlaybackState {
+    ready_queue: VecDeque::new(),
+    ghost_name,
+    all_predicted: false,
+  });
+
+  std::thread::spawn(move || {
+    for segment in segments {
+      // キャンセルチェック: SYNC_STATE が None ならば中断
+      {
+        let state = SYNC_STATE.lock().unwrap();
+        if state.is_none() {
+          return;
+        }
+      }
+
+      let wav = sync_predict(&*segment.predictor).unwrap_or_default();
+
+      // 合成結果をプールに追加
+      {
+        let mut state = SYNC_STATE.lock().unwrap();
+        if let Some(s) = state.as_mut() {
+          s.ready_queue.push_back(SyncReadySegment {
+            text: segment.text,
+            scope: segment.scope,
+            wav,
+          });
+        } else {
+          return; // キャンセルされた
+        }
+      }
+    }
+
+    // 全合成完了フラグをセット
+    let mut state = SYNC_STATE.lock().unwrap();
+    if let Some(s) = state.as_mut() {
+      s.all_predicted = true;
+    }
+  });
+}
+
+/// 同期モード用: プールから合成済みセグメントを取得し、残りがあるかも返す
+pub(crate) fn pop_ready_segment(
+  ghost_name: &str,
+) -> (Option<SyncReadySegment>, bool) {
+  let mut state = SYNC_STATE.lock().unwrap();
+  match state.as_mut() {
+    Some(s) if s.ghost_name == ghost_name => {
+      let segment = s.ready_queue.pop_front();
+      let has_more = !s.ready_queue.is_empty() || !s.all_predicted;
+      (segment, has_more)
+    }
+    _ => (None, false),
   }
 }
