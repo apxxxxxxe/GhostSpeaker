@@ -108,6 +108,21 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     );
   }
 
+  let mut sync_balloon_setting = String::from("-");
+  if let Some(si) = ghosts_voices.get(&ghost_name) {
+    let switch = if si.sync_speech_to_balloon {
+      ACTIVATED.to_string()
+    } else {
+      DEACTIVATED.to_string()
+    };
+    sync_balloon_setting = format!(
+      "【現在 \\__q[OnSyncBalloonSettingChanged,{},{}]{}\\__q】\\n",
+      ghost_name,
+      path_for_arg,
+      decorated(&switch, "bold"),
+    );
+  }
+
   for i in 0..character_voices.len() {
     characters_info.push_str(&chara_info(
       &characters,
@@ -241,6 +256,7 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       \\![*]音量調整(共通)\\n    {}\
       \\![*]句読点ごとに読み上げ(共通)\\n    {}\
       \\![*]改行で一拍おく(ゴースト別)\\n    {}\
+      \\![*]セリフ表示を読み上げ音声に合わせる(ゴースト別)\\n    {}\
       \\![*]デフォルト声質(共通)\\n    {}\
       \\n\\q[×,]\
       ",
@@ -252,6 +268,7 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     volume_changer,
     punctuation_changer,
     division_setting,
+    sync_balloon_setting,
     default_voice_info,
   );
 
@@ -690,6 +707,28 @@ pub(crate) fn on_division_setting_changed(req: &PluginRequest) -> PluginResponse
   };
   if let Some(info) = ghosts_voices.get_mut(&ghost_name) {
     info.devide_by_lines = !info.devide_by_lines
+  }
+
+  let script = format!(
+    "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+    PLUGIN_UUID, ghost_name, path_for_arg
+  );
+  new_response_with_script(script, false)
+}
+
+pub(crate) fn on_sync_balloon_setting_changed(req: &PluginRequest) -> PluginResponse {
+  let refs = get_references(req);
+  let ghost_name = refs[0].to_string();
+  let path_for_arg = refs[1].to_string();
+  let mut ghosts_voices = match GHOSTS_VOICES.write() {
+    Ok(gv) => gv,
+    Err(e) => {
+      error!("Failed to write GHOSTS_VOICES: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  if let Some(info) = ghosts_voices.get_mut(&ghost_name) {
+    info.sync_speech_to_balloon = !info.sync_speech_to_balloon;
   }
 
   let script = format!(

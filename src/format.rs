@@ -51,6 +51,14 @@ pub(crate) fn split_by_punctuation(src: String) -> Vec<String> {
   result
 }
 
+pub(crate) fn scope_to_tag(scope: usize) -> String {
+  match scope {
+    0 => "\\0".to_string(),
+    1 => "\\1".to_string(),
+    n => format!("\\p[{}]", n),
+  }
+}
+
 fn split_dialog_local(src: String) -> Vec<Dialog> {
   let change_scope_re = Regex::new(r"\\([0h1u])|\\p\[([0-9]+)\]").unwrap();
   let mut result = Vec::new();

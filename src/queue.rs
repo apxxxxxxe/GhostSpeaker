@@ -16,6 +16,7 @@ const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const QUEUE_POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
@@ -306,6 +307,9 @@ pub(crate) fn stop_queues() -> Result<
   >,
 > {
   debug!("{}", "stopping queue");
+
+  // 同期再生ステートをクリア
+  *SYNC_STATE.lock().unwrap() = None;
   
   // 音声再生を即座に強制停止
   if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
@@ -383,7 +387,26 @@ fn args_to_predictors(
   args: (String, String),
 ) -> Option<VecDeque<Box<dyn Predictor + Send + Sync>>> {
   let (text, ghost_name) = args;
-  let mut predictors: VecDeque<Box<dyn Predictor + Send + Sync>> = VecDeque::new();
+  build_segments(text, ghost_name, false).map(|segments| {
+    segments
+      .into_iter()
+      .map(|seg| seg.predictor)
+      .collect()
+  })
+}
+
+pub(crate) struct SyncSegment {
+  pub text: String,
+  pub scope: usize,
+  pub predictor: Box<dyn Predictor + Send + Sync>,
+}
+
+pub(crate) fn build_segments(
+  text: String,
+  ghost_name: String,
+  sync_mode: bool,
+) -> Option<Vec<SyncSegment>> {
+  let mut segments: Vec<SyncSegment> = Vec::new();
   let connected_engines = futures::executor::block_on(async {
     CURRENT_CONNECTION_STATUS
       .read()
@@ -394,7 +417,7 @@ fn args_to_predictors(
       .map(|(k, _)| *k)
       .collect::<Vec<_>>()
   });
-  if connected_engines.clone().is_empty() {
+  if connected_engines.is_empty() {
     debug!("no engine connected: skip: {}", text);
     return None;
   }
@@ -443,7 +466,6 @@ fn args_to_predictors(
           .iter()
           .any(|s| s.speaker_uuid == speaker.speaker_uuid)
         {
-          // エンジン側に声質が存在しないならスキップ
           voice_not_found = true;
         }
       }
@@ -452,39 +474,95 @@ fn args_to_predictors(
       continue;
     }
     let engine = engine_from_port(speaker.port).unwrap();
-    let texts = if *speak_by_punctuation && engine != Engine::BouyomiChan {
-      split_by_punctuation(dialog.text)
+    let texts = if (*speak_by_punctuation && engine != Engine::BouyomiChan) || sync_mode {
+      split_by_punctuation(dialog.text.clone())
     } else {
       /* 棒読みちゃんは細切れの恩恵が少ない&
-      読み上げ順がばらばらになることがあるので常にまとめて読み上げる */
-      vec![dialog.text]
+      読み上げ順がばらばらになることがあるので常にまとめて読み上げる
+      (ただし sync_mode では表示同期のため分割する) */
+      vec![dialog.text.clone()]
     };
-    for text in texts {
-      match engine {
-        Engine::CoeiroInkV2 => {
-          predictors.push_back(Box::new(CoeiroinkV2Predictor::new(
-            text,
-            speaker.speaker_uuid.clone(),
-            speaker.style_id,
-          )));
-        }
+    for t in texts {
+      let predictor: Box<dyn Predictor + Send + Sync> = match engine {
+        Engine::CoeiroInkV2 => Box::new(CoeiroinkV2Predictor::new(
+          t.clone(),
+          speaker.speaker_uuid.clone(),
+          speaker.style_id,
+        )),
         Engine::BouyomiChan => {
-          predictors.push_back(Box::new(BouyomichanPredictor::new(text, speaker.style_id)));
+          Box::new(BouyomichanPredictor::new(t.clone(), speaker.style_id))
         }
         Engine::CoeiroInkV1
         | Engine::VoiceVox
         | Engine::Lmroid
         | Engine::ShareVox
         | Engine::ItVoice
-        | Engine::AivisSpeech => {
-          predictors.push_back(Box::new(VoicevoxFamilyPredictor::new(
-            engine,
-            text,
-            speaker.style_id,
-          )));
-        }
-      }
+        | Engine::AivisSpeech => Box::new(VoicevoxFamilyPredictor::new(
+          engine,
+          t.clone(),
+          speaker.style_id,
+        )),
+      };
+      segments.push(SyncSegment {
+        text: t,
+        scope: dialog.scope,
+        predictor,
+      });
     }
   }
-  Some(predictors)
+  Some(segments)
+}
+
+pub(crate) struct SyncPlaybackState {
+  pub segments: VecDeque<SyncSegment>,
+  pub ghost_name: String,
+}
+
+pub(crate) static SYNC_STATE: Lazy<StdMutex<Option<SyncPlaybackState>>> =
+  Lazy::new(|| StdMutex::new(None));
+
+static SYNC_AUDIO_DONE: Lazy<StdMutex<Arc<AtomicBool>>> =
+  Lazy::new(|| StdMutex::new(Arc::new(AtomicBool::new(true))));
+
+/// 同期モード用: Predictor.predict() を同期的に呼び出す
+pub(crate) fn sync_predict(
+  predictor: &dyn Predictor,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+  let handle = RUNTIME
+    .lock()
+    .unwrap()
+    .as_ref()
+    .unwrap()
+    .handle()
+    .clone();
+  handle.block_on(predictor.predict())
+}
+
+/// 同期モード用: WAV を別スレッドで再生し、完了時にフラグ設定
+pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
+  let done = Arc::new(AtomicBool::new(false));
+  *SYNC_AUDIO_DONE.lock().unwrap() = done.clone();
+  // cancel_sync_playback で設定された FORCE_STOP_SINK をリセット
+  if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
+    *force_stop = false;
+  }
+  std::thread::spawn(move || {
+    if !wav.is_empty() {
+      let _ = play_wav(wav);
+    }
+    done.store(true, Ordering::SeqCst);
+  });
+}
+
+/// 同期再生の音声が完了したか確認（非ブロッキング）
+pub(crate) fn is_sync_audio_done() -> bool {
+  SYNC_AUDIO_DONE.lock().unwrap().load(Ordering::SeqCst)
+}
+
+/// 同期再生をキャンセル
+pub(crate) fn cancel_sync_playback() {
+  *SYNC_STATE.lock().unwrap() = None;
+  if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
+    *force_stop = true;
+  }
 }

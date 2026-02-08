@@ -63,6 +63,8 @@ fn get_event(id: &str) -> Option<fn(&PluginRequest) -> PluginResponse> {
     "OnAutoStartToggled" => Some(on_auto_start_toggled),
     "OnCharacterResized" => Some(on_character_resized),
     "OnGhostBoot" => Some(on_ghost_boot),
+    "OnSyncSpeechContinue" => Some(on_sync_speech_continue),
+    "OnSyncBalloonSettingChanged" => Some(on_sync_balloon_setting_changed),
     _ => None,
   }
 }
