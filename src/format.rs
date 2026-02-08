@@ -11,13 +11,20 @@ pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
   s = delete_quick_section(s);
 
   let lines_re = Regex::new(r"(\\n(\[[^\]]+\])?)+").unwrap();
+
+  // raw_text 用: 。挿入前のテキストで分割
+  let raw_dialogs = split_dialog_local(s.clone());
+
   if devide_by_lines {
     s = lines_re.replace_all(&s, "$0。").to_string();
   }
 
   let mut raws = split_dialog_local(s);
-  for r in raws.iter_mut() {
-    // raw_text は split_dialog_local で既に text と同値に設定済み
+  for (i, r) in raws.iter_mut().enumerate() {
+    // raw_text には。挿入前のテキストを使用
+    if i < raw_dialogs.len() {
+      r.raw_text = raw_dialogs[i].raw_text.clone();
+    }
     r.text = clear_tags(r.text.clone());
   }
 
