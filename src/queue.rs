@@ -474,12 +474,11 @@ pub(crate) fn build_segments(
       continue;
     }
     let engine = engine_from_port(speaker.port).unwrap();
-    let texts = if (*speak_by_punctuation && engine != Engine::BouyomiChan) || sync_mode {
+    let texts = if (*speak_by_punctuation || sync_mode) && engine != Engine::BouyomiChan {
       split_by_punctuation(dialog.text.clone())
     } else {
       /* 棒読みちゃんは細切れの恩恵が少ない&
-      読み上げ順がばらばらになることがあるので常にまとめて読み上げる
-      (ただし sync_mode では表示同期のため分割する) */
+      読み上げ順がばらばらになることがあるので常にまとめて読み上げる */
       vec![dialog.text.clone()]
     };
     for t in texts {
