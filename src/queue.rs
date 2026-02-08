@@ -2,7 +2,7 @@ use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, NO_VOICE_UUID};
-use crate::format::{split_by_punctuation, split_dialog};
+use crate::format::{split_by_punctuation_with_raw, split_dialog};
 use crate::player::play_wav;
 use crate::system::get_port_opener_path;
 use crate::variables::GHOSTS_VOICES;
@@ -397,6 +397,7 @@ fn args_to_predictors(
 
 pub(crate) struct SyncSegment {
   pub text: String,
+  pub raw_text: String,
   pub scope: usize,
   pub predictor: Box<dyn Predictor + Send + Sync>,
 }
@@ -474,14 +475,14 @@ pub(crate) fn build_segments(
       continue;
     }
     let engine = engine_from_port(speaker.port).unwrap();
-    let texts = if (*speak_by_punctuation || sync_mode) && engine != Engine::BouyomiChan {
-      split_by_punctuation(dialog.text.clone())
+    let pairs = if (*speak_by_punctuation || sync_mode) && engine != Engine::BouyomiChan {
+      split_by_punctuation_with_raw(dialog.text.clone(), dialog.raw_text.clone())
     } else {
       /* 棒読みちゃんは細切れの恩恵が少ない&
       読み上げ順がばらばらになることがあるので常にまとめて読み上げる */
-      vec![dialog.text.clone()]
+      vec![(dialog.text.clone(), dialog.raw_text.clone())]
     };
-    for t in texts {
+    for (t, rt) in pairs {
       let predictor: Box<dyn Predictor + Send + Sync> = match engine {
         Engine::CoeiroInkV2 => Box::new(CoeiroinkV2Predictor::new(
           t.clone(),
@@ -504,6 +505,7 @@ pub(crate) fn build_segments(
       };
       segments.push(SyncSegment {
         text: t,
+        raw_text: rt,
         scope: dialog.scope,
         predictor,
       });
@@ -512,8 +514,10 @@ pub(crate) fn build_segments(
   Some(segments)
 }
 
+#[allow(dead_code)]
 pub(crate) struct SyncReadySegment {
   pub text: String,
+  pub raw_text: String,
   pub scope: usize,
   pub wav: Vec<u8>,
 }
@@ -600,6 +604,7 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
         if let Some(s) = state.as_mut() {
           s.ready_queue.push_back(SyncReadySegment {
             text: segment.text,
+            raw_text: segment.raw_text,
             scope: segment.scope,
             wav,
           });

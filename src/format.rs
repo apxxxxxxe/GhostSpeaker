@@ -2,6 +2,7 @@ use regex::Regex;
 
 pub(crate) struct Dialog {
   pub text: String,
+  pub raw_text: String,
   pub scope: usize,
 }
 
@@ -16,6 +17,7 @@ pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
 
   let mut raws = split_dialog_local(s);
   for r in raws.iter_mut() {
+    // raw_text は split_dialog_local で既に text と同値に設定済み
     r.text = clear_tags(r.text.clone());
   }
 
@@ -30,6 +32,7 @@ pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
       }
       result.push(Dialog {
         text: text.to_string(),
+        raw_text: r.raw_text.clone(),
         scope: r.scope,
       });
     }
@@ -49,6 +52,73 @@ pub(crate) fn split_by_punctuation(src: String) -> Vec<String> {
     result.push(text.to_string());
   }
   result
+}
+
+pub(crate) fn split_by_punctuation_with_raw(
+  clean: String,
+  raw: String,
+) -> Vec<(String, String)> {
+  let clean_segments = split_by_punctuation(clean);
+  if clean_segments.len() <= 1 {
+    return vec![(
+      clean_segments.into_iter().next().unwrap_or_default(),
+      raw,
+    )];
+  }
+
+  let tag_re = sakura_script_regex();
+  let tag_ranges: Vec<(usize, usize)> = tag_re
+    .find_iter(&raw)
+    .map(|m| (m.start(), m.end()))
+    .collect();
+
+  let raw_bytes = raw.as_bytes();
+  let mut raw_pos: usize = 0;
+  let mut tag_idx: usize = 0;
+  let mut result: Vec<(String, String)> = Vec::new();
+
+  for clean_seg in &clean_segments {
+    let raw_start = raw_pos;
+    for _ in clean_seg.chars() {
+      // タグをスキップ
+      while tag_idx < tag_ranges.len() && tag_ranges[tag_idx].0 == raw_pos {
+        raw_pos = tag_ranges[tag_idx].1;
+        tag_idx += 1;
+      }
+      // テキスト文字を消費
+      if raw_pos < raw_bytes.len() {
+        let ch_len = utf8_char_len(raw_bytes[raw_pos]);
+        raw_pos += ch_len;
+      }
+    }
+    // 次のテキスト文字の直前までのタグも含める
+    while tag_idx < tag_ranges.len() && tag_ranges[tag_idx].0 == raw_pos {
+      raw_pos = tag_ranges[tag_idx].1;
+      tag_idx += 1;
+    }
+    result.push((clean_seg.clone(), raw[raw_start..raw_pos].to_string()));
+  }
+
+  // 末尾の残り（末尾タグ等）を最後のセグメントに追加
+  if raw_pos < raw.len() {
+    if let Some(last) = result.last_mut() {
+      last.1.push_str(&raw[raw_pos..]);
+    }
+  }
+
+  result
+}
+
+fn utf8_char_len(first_byte: u8) -> usize {
+  if first_byte & 0x80 == 0 {
+    1
+  } else if first_byte & 0xE0 == 0xC0 {
+    2
+  } else if first_byte & 0xF0 == 0xE0 {
+    3
+  } else {
+    4
+  }
 }
 
 pub(crate) fn scope_to_tag(scope: usize) -> String {
@@ -90,6 +160,7 @@ fn split_dialog_local(src: String) -> Vec<Dialog> {
 
     result.push(Dialog {
       text: sep[i + 1].to_string(),
+      raw_text: sep[i + 1].to_string(),
       scope,
     });
   }
@@ -97,10 +168,13 @@ fn split_dialog_local(src: String) -> Vec<Dialog> {
   result
 }
 
+fn sakura_script_regex() -> Regex {
+  Regex::new(r###"\\_{0,2}(w[1-9]|[a-zA-Z0-9*!&\-+](\[("([^"]|\\")+?"|([^\]]|\\\])+?)+?\])?)"###)
+    .unwrap()
+}
+
 fn clear_tags(src: String) -> String {
-  let sakura_script_re =
-    Regex::new(r###"\\_{0,2}(w[1-9]|[a-zA-Z0-9*!&\-+](\[("([^"]|\\")+?"|([^\]]|\\\])+?)+?\])?)"###)
-      .unwrap();
+  let sakura_script_re = sakura_script_regex();
   sakura_script_re.replace_all(&src.clone(), "").to_string()
 }
 

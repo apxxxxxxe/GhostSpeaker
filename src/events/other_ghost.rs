@@ -61,7 +61,7 @@ pub(crate) fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let script = format!(
     "{}{}\\![raiseplugin,{},OnSyncSpeechContinue,{}]",
     scope_to_tag(first.scope),
-    first.text,
+    first.raw_text,
     PLUGIN_UUID,
     ghost_name,
   );
@@ -93,14 +93,14 @@ pub(crate) fn on_sync_speech_continue(req: &PluginRequest) -> PluginResponse {
         format!(
           "\\C{}{}\\![raiseplugin,{},OnSyncSpeechContinue,{}]",
           scope_to_tag(seg.scope),
-          seg.text,
+          seg.raw_text,
           PLUGIN_UUID,
           ghost_name,
         )
       } else {
         // 最後のセグメント → チェーン終了、ステートクリア
         *SYNC_STATE.lock().unwrap() = None;
-        format!("\\C{}{}", scope_to_tag(seg.scope), seg.text)
+        format!("\\C{}{}", scope_to_tag(seg.scope), seg.raw_text)
       };
       new_response_with_script(script, false)
     }
