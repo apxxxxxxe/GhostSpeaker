@@ -25,7 +25,7 @@ impl Predictor for VoicevoxFamilyPredictor {
     let domain: String = format!("http://localhost:{}/", self.engine.port());
 
     let synthesis_req: Vec<u8>;
-    match reqwest::Client::new()
+    match crate::engine::HTTP_CLIENT.clone()
       .post(&format!("{}{}", domain, "audio_query"))
       .query(&[
         ("speaker", self.speaker.to_string()),
@@ -56,7 +56,7 @@ impl Predictor for VoicevoxFamilyPredictor {
     }
 
     let wav: Vec<u8>;
-    match reqwest::Client::new()
+    match crate::engine::HTTP_CLIENT.clone()
       .post(&format!("{}{}", domain, "synthesis"))
       .header("Content-Type", "application/json")
       .header("Accept", "audio/wav")

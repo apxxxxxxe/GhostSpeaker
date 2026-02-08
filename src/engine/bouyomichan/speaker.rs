@@ -12,7 +12,12 @@ impl SpeakerGetter for BouyomiChanSpeakerGetter {
   async fn get_speakers_info(
     &self,
   ) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>> {
-    if !is_process_running("BouyomiChan.exe") {
+    let running = tokio::task::spawn_blocking(|| is_process_running("BouyomiChan.exe"))
+      .await
+      .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+        format!("spawn_blocking failed: {}", e).into()
+      })?;
+    if !running {
       return Err("BouyomiChan.exe is not running".into());
     }
 
@@ -60,7 +65,8 @@ impl SpeakerGetter for BouyomiChanSpeakerGetter {
 }
 
 fn is_process_running(process_name: &str) -> bool {
-  let system = System::new_all();
+  let mut system = System::new();
+  system.refresh_processes();
   for process in system.processes_by_name(process_name) {
     if process.name() == process_name {
       return true;

@@ -49,25 +49,26 @@ pub(crate) static SPEAK_QUEUE_STOPPER: Lazy<Arc<Mutex<bool>>> =
   Lazy::new(|| Arc::new(Mutex::new(false)));
 
 fn init_speak_queue() {
-  let mut runtime_guard = match RUNTIME.lock() {
-    Ok(guard) => guard,
-    Err(e) => {
-      error!("Failed to lock runtime: {}", e);
-      return;
-    }
-  };
-
-  let runtime = match runtime_guard.as_mut() {
-    Some(rt) => rt,
-    None => {
-      error!("Runtime is not initialized");
-      return;
+  let handle = {
+    let guard = match RUNTIME.lock() {
+      Ok(g) => g,
+      Err(e) => {
+        error!("Failed to lock runtime: {}", e);
+        return;
+      }
+    };
+    match guard.as_ref() {
+      Some(rt) => rt.handle().clone(),
+      None => {
+        error!("Runtime is not initialized");
+        return;
+      }
     }
   };
 
   let mut speak_handlers = Vec::new();
   for (engine, getter) in get_speaker_getters() {
-    let handler = runtime.spawn(async move {
+    let handler = handle.spawn(async move {
       let mut consecutive_failures = 0;
       const MAX_CONSECUTIVE_FAILURES: u32 = 10; // 最大連続失敗回数
       const BACKOFF_BASE: u64 = 2; // バックオフ基数（秒）
@@ -78,7 +79,7 @@ fn init_speak_queue() {
           debug!("Speak queue stopping for engine: {}", engine.name());
           break;
         }
-        if let Some(port_opener_path) = get_port_opener_path(format!("{}", engine.port())) {
+        if let Some(port_opener_path) = get_port_opener_path(format!("{}", engine.port())).await {
           match getter.get_speakers_info().await {
             Ok(speakers_info) => {
               consecutive_failures = 0; // 成功時はリセット
@@ -137,12 +138,18 @@ fn init_speak_queue() {
             }
           }
         }
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        // 1秒のスリープを100ms x 10に分割して応答性を向上
+        for _ in 0..10 {
+          if *SPEAK_QUEUE_STOPPER.lock().await {
+            break;
+          }
+          tokio::time::sleep(Duration::from_millis(100)).await;
+        }
       }
     });
     speak_handlers.push(handler);
   }
-  futures::executor::block_on(async {
+  handle.block_on(async {
     *SPEAK_HANDLERS.lock().await = speak_handlers;
   });
 }
@@ -151,70 +158,71 @@ fn init_predict_queue() {
   let predict_queue_cln = PREDICT_QUEUE.clone();
   let predict_stopper_cln = PREDICT_STOPPER.clone();
 
-  let handler = {
-    let mut runtime_guard = match RUNTIME.lock() {
-      Ok(guard) => guard,
+  let handle = {
+    let guard = match RUNTIME.lock() {
+      Ok(g) => g,
       Err(e) => {
         error!("Failed to lock runtime for predict queue: {}", e);
         return;
       }
     };
-
-    let runtime = match runtime_guard.as_mut() {
-      Some(rt) => rt,
+    match guard.as_ref() {
+      Some(rt) => rt.handle().clone(),
       None => {
         error!("Runtime is not initialized for predict queue");
         return;
       }
-    };
+    }
+  };
 
-    runtime.spawn(async move {
-      let mut last_activity = Instant::now();
-      const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
+  let handler = handle.spawn(async move {
+    let mut last_activity = Instant::now();
+    const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
 
-      loop {
-        {
-          if predict_queue_cln.lock().await.is_empty() {
-            if *predict_stopper_cln.lock().await {
-              break;
-            }
-
-            // アイドル時間チェック
-            if last_activity.elapsed() > MAX_IDLE_TIME {
-              debug!("Predict queue idle for too long, continuing...");
-              last_activity = Instant::now();
-            }
-
-            tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
-            continue;
+    loop {
+      {
+        if predict_queue_cln.lock().await.is_empty() {
+          if *predict_stopper_cln.lock().await {
+            break;
           }
-        }
 
-        let parg;
-        {
-          let mut guard = predict_queue_cln.lock().await;
-          parg = guard.pop_front();
-        }
+          // アイドル時間チェック
+          if last_activity.elapsed() > MAX_IDLE_TIME {
+            debug!("Predict queue idle for too long, continuing...");
+            last_activity = Instant::now();
+          }
 
-        match parg {
-          None => continue,
-          Some(parg) => {
-            last_activity = Instant::now(); // アクティビティ更新
-            match args_to_predictors(parg) {
-              None => continue,
-              Some(predictors) => {
-                for predictor in predictors {
-                  match predictor.predict().await {
-                    Ok(res) => {
-                      debug!("pushing to play");
-                      futures::executor::block_on(async {
-                        PLAY_QUEUE.lock().await.push_back(res);
-                      });
-                      debug!("pushed to play");
-                    }
-                    Err(e) => {
-                      debug!("predict failed: {}", e);
-                    }
+          tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
+          continue;
+        }
+      }
+
+      let parg;
+      {
+        let mut guard = predict_queue_cln.lock().await;
+        parg = guard.pop_front();
+      }
+
+      match parg {
+        None => continue,
+        Some(parg) => {
+          last_activity = Instant::now(); // アクティビティ更新
+          match args_to_predictors(parg).await {
+            None => continue,
+            Some(predictors) => {
+              for predictor in predictors {
+                // predict結果をOk/Errで分けてからawaitを行う
+                // Box<dyn Error>はSendではないので、awaitをまたがないようにする
+                let wav_result: Result<Vec<u8>, String> =
+                  predictor.predict().await.map_err(|e| e.to_string());
+                match wav_result {
+                  Ok(res) => {
+                    debug!("pushing to play");
+                    PLAY_QUEUE.lock().await.push_back(res);
+                    debug!("pushed to play");
+                  }
+                  Err(e) => {
+                    debug!("predict failed: {}", e);
                   }
                 }
               }
@@ -222,9 +230,9 @@ fn init_predict_queue() {
           }
         }
       }
-    })
-  };
-  futures::executor::block_on(async {
+    }
+  });
+  handle.block_on(async {
     *PREDICT_HANDLER.lock().await = Some(handler);
   });
 }
@@ -233,63 +241,66 @@ pub(crate) fn init_play_queue() {
   let play_queue_cln = PLAY_QUEUE.clone();
   let play_stopper_cln = PLAY_STOPPER.clone();
 
-  let handler = {
-    let mut runtime_guard = match RUNTIME.lock() {
-      Ok(guard) => guard,
+  let handle = {
+    let guard = match RUNTIME.lock() {
+      Ok(g) => g,
       Err(e) => {
         error!("Failed to lock runtime for play queue: {}", e);
         return;
       }
     };
-
-    let runtime = match runtime_guard.as_mut() {
-      Some(rt) => rt,
+    match guard.as_ref() {
+      Some(rt) => rt.handle().clone(),
       None => {
         error!("Runtime is not initialized for play queue");
         return;
       }
-    };
+    }
+  };
 
-    runtime.spawn(async move {
-      let mut last_activity = Instant::now();
-      const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
+  let handler = handle.spawn(async move {
+    let mut last_activity = Instant::now();
+    const MAX_IDLE_TIME: Duration = Duration::from_secs(300); // 5分間のアイドル時間
 
-      loop {
-        {
-          if play_queue_cln.lock().await.is_empty() {
-            if *play_stopper_cln.lock().await {
-              break;
-            }
-
-            // アイドル時間チェック
-            if last_activity.elapsed() > MAX_IDLE_TIME {
-              debug!("Play queue idle for too long, continuing...");
-              last_activity = Instant::now();
-            }
-
-            tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
-            continue;
+    loop {
+      {
+        if play_queue_cln.lock().await.is_empty() {
+          if *play_stopper_cln.lock().await {
+            break;
           }
-        }
 
-        let wav;
-        {
-          let mut guard = play_queue_cln.lock().await;
-          wav = guard.pop_front();
+          // アイドル時間チェック
+          if last_activity.elapsed() > MAX_IDLE_TIME {
+            debug!("Play queue idle for too long, continuing...");
+            last_activity = Instant::now();
+          }
+
+          tokio::time::sleep(QUEUE_POLL_TIMEOUT).await;
+          continue;
         }
-        if let Some(data) = wav {
-          if !data.is_empty() {
-            last_activity = Instant::now(); // アクティビティ更新
-            debug!("{}", format!("play: {}", data.len()));
-            if let Err(e) = play_wav(data) {
-              error!("play_wav failed: {}", e);
-            };
+      }
+
+      let wav;
+      {
+        let mut guard = play_queue_cln.lock().await;
+        wav = guard.pop_front();
+      }
+      if let Some(data) = wav {
+        if !data.is_empty() {
+          last_activity = Instant::now(); // アクティビティ更新
+          debug!("{}", format!("play: {}", data.len()));
+          match tokio::task::spawn_blocking(move || {
+            play_wav(data).map_err(|e| e.to_string())
+          }).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => error!("play_wav failed: {}", e),
+            Err(e) => error!("play_wav spawn_blocking failed: {}", e),
           }
         }
       }
-    })
-  };
-  futures::executor::block_on(async {
+    }
+  });
+  handle.block_on(async {
     *PLAY_HANDLER.lock().await = Some(handler);
   });
 }
@@ -309,7 +320,10 @@ pub(crate) fn stop_queues() -> Result<
   debug!("{}", "stopping queue");
 
   // 同期再生ステートをクリア
-  *SYNC_STATE.lock().unwrap() = None;
+  match SYNC_STATE.lock() {
+    Ok(mut s) => *s = None,
+    Err(e) => error!("Failed to lock SYNC_STATE during shutdown: {}", e),
+  }
   
   // 音声再生を即座に強制停止
   if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
@@ -319,54 +333,64 @@ pub(crate) fn stop_queues() -> Result<
     error!("Failed to set FORCE_STOP_SINK flag");
   }
   
-  // 全停止フラグを設定（協調的停止の開始）
-  futures::executor::block_on(async {
-    *PLAY_STOPPER.lock().await = true;
-    *PREDICT_STOPPER.lock().await = true;
-    *SPEAK_QUEUE_STOPPER.lock().await = true;
-    debug!("{}", "set all stop flags");
-  });
-  
-  // 協調的停止を待機（abort()は使用しない）
-  let start_time = Instant::now();
-  while start_time.elapsed() < GRACEFUL_SHUTDOWN_TIMEOUT {
-    // 全タスクの完了状況を確認
-    let (play_stopped, predict_stopped, speak_stopped) = futures::executor::block_on(async {
-      let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-      let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-      let speak_stopped = SPEAK_HANDLERS.lock().await.iter().all(|h| h.is_finished());
-      (play_stopped, predict_stopped, speak_stopped)
+  // ランタイムハンドルを取得（take()前に）
+  let handle = {
+    let guard = RUNTIME.lock()?;
+    guard.as_ref().map(|rt| rt.handle().clone())
+  };
+
+  if let Some(handle) = &handle {
+    // 全停止フラグを設定（協調的停止の開始）
+    handle.block_on(async {
+      *PLAY_STOPPER.lock().await = true;
+      *PREDICT_STOPPER.lock().await = true;
+      *SPEAK_QUEUE_STOPPER.lock().await = true;
+      debug!("{}", "set all stop flags");
     });
     
-    if play_stopped && predict_stopped && speak_stopped {
-      debug!("{}", "all tasks stopped gracefully");
-      break;
+    // 協調的停止を待機（abort()は使用しない）
+    let start_time = Instant::now();
+    while start_time.elapsed() < GRACEFUL_SHUTDOWN_TIMEOUT {
+      // 全タスクの完了状況を確認
+      let (play_stopped, predict_stopped, speak_stopped) = handle.block_on(async {
+        let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
+        let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
+        let speak_stopped = SPEAK_HANDLERS.lock().await.iter().all(|h| h.is_finished());
+        (play_stopped, predict_stopped, speak_stopped)
+      });
+      
+      if play_stopped && predict_stopped && speak_stopped {
+        debug!("{}", "all tasks stopped gracefully");
+        break;
+      }
+      
+      // 進行状況をログ出力
+      if !play_stopped {
+        debug!("{}", "waiting for play handler to finish");
+      }
+      if !predict_stopped {
+        debug!("{}", "waiting for predict handler to finish");
+      }
+      if !speak_stopped {
+        debug!("{}", "waiting for speak handlers to finish");
+      }
+      
+      std::thread::sleep(Duration::from_millis(200));
     }
     
-    // 進行状況をログ出力
-    if !play_stopped {
-      debug!("{}", "waiting for play handler to finish");
+    // タイムアウト時もabortはせず、警告のみ
+    if start_time.elapsed() >= GRACEFUL_SHUTDOWN_TIMEOUT {
+      warn!("Some tasks did not stop within timeout, proceeding with shutdown");
+      let (play_stopped, predict_stopped, speak_stopped) = handle.block_on(async {
+        let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
+        let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
+        let speak_stopped = SPEAK_HANDLERS.lock().await.iter().all(|h| h.is_finished());
+        (play_stopped, predict_stopped, speak_stopped)
+      });
+      warn!("Task status - play: {}, predict: {}, speak: {}", play_stopped, predict_stopped, speak_stopped);
     }
-    if !predict_stopped {
-      debug!("{}", "waiting for predict handler to finish");
-    }
-    if !speak_stopped {
-      debug!("{}", "waiting for speak handlers to finish");
-    }
-    
-    std::thread::sleep(Duration::from_millis(200));
-  }
-  
-  // タイムアウト時もabortはせず、警告のみ
-  if start_time.elapsed() >= GRACEFUL_SHUTDOWN_TIMEOUT {
-    warn!("Some tasks did not stop within timeout, proceeding with shutdown");
-    let (play_stopped, predict_stopped, speak_stopped) = futures::executor::block_on(async {
-      let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-      let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-      let speak_stopped = SPEAK_HANDLERS.lock().await.iter().all(|h| h.is_finished());
-      (play_stopped, predict_stopped, speak_stopped)
-    });
-    warn!("Task status - play: {}, predict: {}, speak: {}", play_stopped, predict_stopped, speak_stopped);
+  } else {
+    warn!("Runtime was not initialized, skipping graceful shutdown");
   }
   
   debug!("{}", "stopped queue");
@@ -377,17 +401,33 @@ pub(crate) fn stop_queues() -> Result<
 }
 
 pub(crate) fn push_to_prediction(text: String, ghost_name: String) {
-  futures::executor::block_on(async {
+  let handle = {
+    let guard = match RUNTIME.lock() {
+      Ok(g) => g,
+      Err(e) => {
+        error!("Failed to lock RUNTIME in push_to_prediction: {}", e);
+        return;
+      }
+    };
+    match guard.as_ref() {
+      Some(rt) => rt.handle().clone(),
+      None => {
+        error!("Runtime is not initialized in push_to_prediction");
+        return;
+      }
+    }
+  };
+  handle.block_on(async {
     // 処理が重いので、別スレッドに投げてそっちでPredictorを作る
     PREDICT_QUEUE.lock().await.push_back((text, ghost_name));
   });
 }
 
-fn args_to_predictors(
+async fn args_to_predictors(
   args: (String, String),
 ) -> Option<VecDeque<Box<dyn Predictor + Send + Sync>>> {
   let (text, ghost_name) = args;
-  build_segments(text, ghost_name, false).map(|segments| {
+  build_segments_async(text, ghost_name, false).await.map(|segments| {
     segments
       .into_iter()
       .map(|seg| seg.predictor)
@@ -402,13 +442,13 @@ pub(crate) struct SyncSegment {
   pub predictor: Box<dyn Predictor + Send + Sync>,
 }
 
-pub(crate) fn build_segments(
+async fn build_segments_async(
   text: String,
   ghost_name: String,
   sync_mode: bool,
 ) -> Option<Vec<SyncSegment>> {
   let mut segments: Vec<SyncSegment> = Vec::new();
-  let connected_engines = futures::executor::block_on(async {
+  let connected_engines = {
     CURRENT_CONNECTION_STATUS
       .read()
       .await
@@ -417,65 +457,95 @@ pub(crate) fn build_segments(
       .filter(|(_, v)| **v)
       .map(|(k, _)| *k)
       .collect::<Vec<_>>()
-  });
+  };
   if connected_engines.is_empty() {
     debug!("no engine connected: skip: {}", text);
     return None;
   }
 
   debug!("{}", format!("predicting: {}", text));
-  let devide_by_lines = GHOSTS_VOICES
-    .read()
-    .unwrap()
-    .get(&ghost_name)
-    .unwrap()
-    .devide_by_lines;
 
-  let speak_by_punctuation = SPEAK_BY_PUNCTUATION.read().unwrap();
+  // GHOSTS_VOICES から必要なデータをクローンしてからガードをドロップ
+  let (devide_by_lines, speak_by_punctuation_val, speakers, initial_voice) = {
+    let ghosts_voices = match GHOSTS_VOICES.read() {
+      Ok(gv) => gv,
+      Err(e) => {
+        error!("Failed to read GHOSTS_VOICES: {}", e);
+        return None;
+      }
+    };
+    let ghost_info = match ghosts_voices.get(&ghost_name) {
+      Some(info) => info,
+      None => {
+        error!("Ghost not found in GHOSTS_VOICES: {}", ghost_name);
+        return None;
+      }
+    };
+    let devide_by_lines = ghost_info.devide_by_lines;
+    let speakers = ghost_info.voices.clone();
+    let speak_by_punctuation_val = match SPEAK_BY_PUNCTUATION.read() {
+      Ok(sbp) => *sbp,
+      Err(e) => {
+        error!("Failed to read SPEAK_BY_PUNCTUATION: {}", e);
+        true
+      }
+    };
+    let initial_voice = match INITIAL_VOICE.read() {
+      Ok(iv) => iv.clone(),
+      Err(e) => {
+        error!("Failed to read INITIAL_VOICE: {}", e);
+        return None;
+      }
+    };
+    (devide_by_lines, speak_by_punctuation_val, speakers, initial_voice)
+  };
+  // ここではすべてのstd::sync::RwLockガードがドロップ済み
 
-  let ghosts_voices = GHOSTS_VOICES.write().unwrap();
-  let speakers = &ghosts_voices.get(&ghost_name).unwrap().voices;
   for dialog in split_dialog(text, devide_by_lines) {
     if dialog.text.is_empty() {
       continue;
     }
 
-    let initial_speaker = &INITIAL_VOICE.read().unwrap();
     debug!("selecting speaker: {}", dialog.scope);
     let speaker = match speakers.get(dialog.scope) {
       Some(speaker) => {
         if let Some(sp) = speaker {
           sp.clone()
         } else {
-          (*initial_speaker).clone()
+          initial_voice.clone()
         }
       }
-      None => (*initial_speaker).clone(),
+      None => initial_voice.clone(),
     };
 
     if speaker.speaker_uuid == NO_VOICE_UUID {
       continue;
     }
-    let mut voice_not_found = false;
-    futures::executor::block_on(async {
+    let voice_not_found = {
+      let engine = match engine_from_port(speaker.port) {
+        Some(e) => e,
+        None => continue,
+      };
       if let Some(speakers_by_engine) = &SPEAKERS_INFO
         .read()
         .await
-        .get(&(engine_from_port(speaker.port).unwrap()))
+        .get(&engine)
       {
-        if !speakers_by_engine
+        !speakers_by_engine
           .iter()
           .any(|s| s.speaker_uuid == speaker.speaker_uuid)
-        {
-          voice_not_found = true;
-        }
+      } else {
+        false
       }
-    });
+    };
     if voice_not_found {
       continue;
     }
-    let engine = engine_from_port(speaker.port).unwrap();
-    let pairs = if (*speak_by_punctuation || sync_mode) && engine != Engine::BouyomiChan {
+    let engine = match engine_from_port(speaker.port) {
+      Some(e) => e,
+      None => continue,
+    };
+    let pairs = if (speak_by_punctuation_val || sync_mode) && engine != Engine::BouyomiChan {
       split_by_punctuation_with_raw(dialog.text.clone(), dialog.raw_text.clone())
     } else {
       /* 棒読みちゃんは細切れの恩恵が少ない&
@@ -514,6 +584,25 @@ pub(crate) fn build_segments(
   Some(segments)
 }
 
+/// sync ラッパー（on_other_ghost_talk 用）
+pub(crate) fn build_segments(
+  text: String,
+  ghost_name: String,
+  sync_mode: bool,
+) -> Option<Vec<SyncSegment>> {
+  let handle = {
+    let guard = match RUNTIME.lock() {
+      Ok(g) => g,
+      Err(e) => {
+        error!("Failed to lock RUNTIME: {}", e);
+        return None;
+      }
+    };
+    guard.as_ref()?.handle().clone()
+  };
+  handle.block_on(build_segments_async(text, ghost_name, sync_mode))
+}
+
 #[allow(dead_code)]
 pub(crate) struct SyncReadySegment {
   pub text: String,
@@ -538,20 +627,33 @@ static SYNC_AUDIO_DONE: Lazy<StdMutex<Arc<AtomicBool>>> =
 pub(crate) fn sync_predict(
   predictor: &dyn Predictor,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-  let handle = RUNTIME
-    .lock()
-    .unwrap()
-    .as_ref()
-    .unwrap()
-    .handle()
-    .clone();
-  handle.block_on(predictor.predict())
+  let handle = {
+    let guard = RUNTIME
+      .lock()
+      .map_err(|e| format!("RUNTIME lock poisoned: {}", e))?;
+    guard
+      .as_ref()
+      .ok_or("Runtime not initialized")?
+      .handle()
+      .clone()
+  };
+  handle.block_on(async {
+    tokio::time::timeout(Duration::from_secs(30), predictor.predict())
+      .await
+      .map_err(|_| -> Box<dyn std::error::Error> { "predict timed out".into() })?
+  })
 }
 
 /// 同期モード用: WAV を別スレッドで再生し、完了時にフラグ設定
 pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
   let done = Arc::new(AtomicBool::new(false));
-  *SYNC_AUDIO_DONE.lock().unwrap() = done.clone();
+  match SYNC_AUDIO_DONE.lock() {
+    Ok(mut guard) => *guard = done.clone(),
+    Err(e) => {
+      error!("Failed to lock SYNC_AUDIO_DONE: {}", e);
+      return;
+    }
+  }
   // cancel_sync_playback で設定された FORCE_STOP_SINK をリセット
   if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
     *force_stop = false;
@@ -566,12 +668,21 @@ pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
 
 /// 同期再生の音声が完了したか確認（非ブロッキング）
 pub(crate) fn is_sync_audio_done() -> bool {
-  SYNC_AUDIO_DONE.lock().unwrap().load(Ordering::SeqCst)
+  match SYNC_AUDIO_DONE.lock() {
+    Ok(guard) => guard.load(Ordering::SeqCst),
+    Err(e) => {
+      error!("Failed to lock SYNC_AUDIO_DONE: {}", e);
+      true // poison時は完了として扱う
+    }
+  }
 }
 
 /// 同期再生をキャンセル
 pub(crate) fn cancel_sync_playback() {
-  *SYNC_STATE.lock().unwrap() = None;
+  match SYNC_STATE.lock() {
+    Ok(mut s) => *s = None,
+    Err(e) => error!("Failed to lock SYNC_STATE in cancel: {}", e),
+  }
   if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
     *force_stop = true;
   }
@@ -580,19 +691,34 @@ pub(crate) fn cancel_sync_playback() {
 /// 同期モード用: 全セグメントをバックグラウンドで順次合成し、プールに蓄積する
 pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: String) {
   // SYNC_STATE を初期化（空の ready_queue）
-  *SYNC_STATE.lock().unwrap() = Some(SyncPlaybackState {
-    ready_queue: VecDeque::new(),
-    ghost_name,
-    all_predicted: false,
-  });
+  match SYNC_STATE.lock() {
+    Ok(mut s) => {
+      *s = Some(SyncPlaybackState {
+        ready_queue: VecDeque::new(),
+        ghost_name,
+        all_predicted: false,
+      });
+    }
+    Err(e) => {
+      error!("Failed to lock SYNC_STATE for initialization: {}", e);
+      return;
+    }
+  }
 
   std::thread::spawn(move || {
     for segment in segments {
       // キャンセルチェック: SYNC_STATE が None ならば中断
       {
-        let state = SYNC_STATE.lock().unwrap();
-        if state.is_none() {
-          return;
+        match SYNC_STATE.lock() {
+          Ok(state) => {
+            if state.is_none() {
+              return;
+            }
+          }
+          Err(e) => {
+            error!("Failed to lock SYNC_STATE for cancel check: {}", e);
+            return;
+          }
         }
       }
 
@@ -600,24 +726,35 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
 
       // 合成結果をプールに追加
       {
-        let mut state = SYNC_STATE.lock().unwrap();
-        if let Some(s) = state.as_mut() {
-          s.ready_queue.push_back(SyncReadySegment {
-            text: segment.text,
-            raw_text: segment.raw_text,
-            scope: segment.scope,
-            wav,
-          });
-        } else {
-          return; // キャンセルされた
+        match SYNC_STATE.lock() {
+          Ok(mut state) => {
+            if let Some(s) = state.as_mut() {
+              s.ready_queue.push_back(SyncReadySegment {
+                text: segment.text,
+                raw_text: segment.raw_text,
+                scope: segment.scope,
+                wav,
+              });
+            } else {
+              return; // キャンセルされた
+            }
+          }
+          Err(e) => {
+            error!("Failed to lock SYNC_STATE for push: {}", e);
+            return;
+          }
         }
       }
     }
 
     // 全合成完了フラグをセット
-    let mut state = SYNC_STATE.lock().unwrap();
-    if let Some(s) = state.as_mut() {
-      s.all_predicted = true;
+    match SYNC_STATE.lock() {
+      Ok(mut state) => {
+        if let Some(s) = state.as_mut() {
+          s.all_predicted = true;
+        }
+      }
+      Err(e) => error!("Failed to lock SYNC_STATE for completion flag: {}", e),
     }
   });
 }
@@ -626,13 +763,18 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
 pub(crate) fn pop_ready_segment(
   ghost_name: &str,
 ) -> (Option<SyncReadySegment>, bool) {
-  let mut state = SYNC_STATE.lock().unwrap();
-  match state.as_mut() {
-    Some(s) if s.ghost_name == ghost_name => {
-      let segment = s.ready_queue.pop_front();
-      let has_more = !s.ready_queue.is_empty() || !s.all_predicted;
-      (segment, has_more)
+  match SYNC_STATE.lock() {
+    Ok(mut state) => match state.as_mut() {
+      Some(s) if s.ghost_name == ghost_name => {
+        let segment = s.ready_queue.pop_front();
+        let has_more = !s.ready_queue.is_empty() || !s.all_predicted;
+        (segment, has_more)
+      }
+      _ => (None, false),
+    },
+    Err(e) => {
+      error!("Failed to lock SYNC_STATE in pop_ready_segment: {}", e);
+      (None, false)
     }
-    _ => (None, false),
   }
 }

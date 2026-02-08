@@ -66,7 +66,7 @@ impl SpeakerGetter for CoeiroinkV2SpeakerGetter {
     println!("Requesting speakers info from {}", URL);
 
     debug!("getting speakers info");
-    let body: String = match reqwest::Client::new().get(URL).send().await {
+    let body: String = match crate::engine::HTTP_CLIENT.clone().get(URL).send().await {
       Ok(res) => {
         debug!("get_speakers_info success");
         res.text().await?

@@ -91,7 +91,22 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
 
   debug!("getting speakers_info");
   let speakers_info =
-    &mut futures::executor::block_on(async { SPEAKERS_INFO.read().await.clone() });
+    &mut {
+      let handle = match crate::queue::RUNTIME.lock() {
+        Ok(g) => match g.as_ref() {
+          Some(rt) => rt.handle().clone(),
+          None => {
+            error!("Runtime is not initialized");
+            return new_response_with_script(String::new(), false);
+          }
+        },
+        Err(e) => {
+          error!("Failed to lock RUNTIME: {}", e);
+          return new_response_with_script(String::new(), false);
+        }
+      };
+      handle.block_on(async { SPEAKERS_INFO.read().await.clone() })
+    };
   debug!("success to get speakers_info");
 
   if let Some(si) = ghosts_voices.get(&ghost_name) {
@@ -152,7 +167,22 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   characters_info.push_str(&format!("【{}】\\n", character_resize_buttons));
 
   let mut engine_status = String::new();
-  let engine_auto_start = futures::executor::block_on(async { ENGINE_AUTO_START.read().await });
+  let engine_auto_start = {
+    let handle = match crate::queue::RUNTIME.lock() {
+      Ok(g) => match g.as_ref() {
+        Some(rt) => rt.handle().clone(),
+        None => {
+          error!("Runtime is not initialized");
+          return new_response_with_script(String::new(), false);
+        }
+      },
+      Err(e) => {
+        error!("Failed to lock RUNTIME: {}", e);
+        return new_response_with_script(String::new(), false);
+      }
+    };
+    handle.block_on(async { ENGINE_AUTO_START.read().await })
+  };
   for engine in ENGINE_LIST.iter() {
     if speakers_info.contains_key(engine) {
       engine_status += &format!("{}: {}", engine.name(), greened("起動中"),);
@@ -326,7 +356,16 @@ fn get_voice(c: &Option<CharacterVoice>) -> String {
     None => return UNSET_VOICE.to_string(),
   };
   let mut voice = String::from(DEFAULT_VOICE);
-  let speakers_info = futures::executor::block_on(async { SPEAKERS_INFO.read().await.clone() });
+  let speakers_info = {
+    let handle = match crate::queue::RUNTIME.lock() {
+      Ok(g) => match g.as_ref() {
+        Some(rt) => rt.handle().clone(),
+        None => return DEFAULT_VOICE.to_string(),
+      },
+      Err(_) => return DEFAULT_VOICE.to_string(),
+    };
+    handle.block_on(async { SPEAKERS_INFO.read().await.clone() })
+  };
   if c.speaker_uuid == NO_VOICE_UUID {
     voice = NO_VOICE.to_string();
   } else if let Some(engine) = engine_from_port(c.port) {
@@ -364,7 +403,16 @@ fn list_available_voices(callbacks: (ListCallback, DummyCallback)) -> String {
   let def = CharacterVoice::no_voice();
   let mut m = "\\b[2]".to_string();
   m.push_str(callbacks.1(NO_VOICE.to_string(), &def).as_str());
-  let speakers_info = futures::executor::block_on(async { SPEAKERS_INFO.read().await.clone() });
+  let speakers_info = {
+    let handle = match crate::queue::RUNTIME.lock() {
+      Ok(g) => match g.as_ref() {
+        Some(rt) => rt.handle().clone(),
+        None => return m,
+      },
+      Err(_) => return m,
+    };
+    handle.block_on(async { SPEAKERS_INFO.read().await.clone() })
+  };
   for (engine, speakers) in speakers_info.iter() {
     for speaker in speakers.iter() {
       for style in speaker.styles.iter() {
@@ -777,10 +825,24 @@ pub(crate) fn on_auto_start_toggled(req: &PluginRequest) -> PluginResponse {
       return new_response_with_script(String::new(), false);
     }
   };
-  if let Some(auto_start) =
-    futures::executor::block_on(async { ENGINE_AUTO_START.write().await }).get_mut(&engine)
   {
-    *auto_start = !*auto_start;
+    let handle = match crate::queue::RUNTIME.lock() {
+      Ok(g) => match g.as_ref() {
+        Some(rt) => rt.handle().clone(),
+        None => {
+          error!("Runtime is not initialized");
+          return new_response_with_script(String::new(), false);
+        }
+      },
+      Err(e) => {
+        error!("Failed to lock RUNTIME: {}", e);
+        return new_response_with_script(String::new(), false);
+      }
+    };
+    let mut auto_start_guard = handle.block_on(async { ENGINE_AUTO_START.write().await });
+    if let Some(auto_start) = auto_start_guard.get_mut(&engine) {
+      *auto_start = !*auto_start;
+    }
   }
 
   let script = format!(

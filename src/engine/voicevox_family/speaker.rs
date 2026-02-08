@@ -58,7 +58,7 @@ impl SpeakerGetter for VoicevoxFamilySpeakerGetter {
     println!("Requesting speakers info from {}", domain);
 
     debug!("getting speakers info");
-    let body = reqwest::Client::new()
+    let body = crate::engine::HTTP_CLIENT.clone()
       .get(format!("{}{}", domain, "speakers").as_str())
       .header("Content-Type", "application/json")
       .send()

@@ -1,20 +1,26 @@
 use crate::engine::Engine;
 use crate::variables::*;
-use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
-use sysinfo::{Pid, Process, ProcessExt, System, SystemExt};
+use sysinfo::{Pid, ProcessExt, System, SystemExt};
+
 use winapi::um::winbase::CREATE_NO_WINDOW;
 
-pub(crate) fn get_port_opener_path(port: String) -> Option<String> {
-  let output = match Command::new("cmd")
-    .args(["/C", "netstat -ano | findstr LISTENING | findstr", &port])
-    .creation_flags(CREATE_NO_WINDOW)
-    .output()
-  {
-    Ok(output) => output,
-    Err(e) => {
+pub(crate) async fn get_port_opener_path(port: String) -> Option<String> {
+  let output = match tokio::time::timeout(
+    std::time::Duration::from_secs(10),
+    tokio::process::Command::new("cmd")
+      .args(["/C", &format!("netstat -ano | findstr LISTENING | findstr {}", port)])
+      .creation_flags(CREATE_NO_WINDOW)
+      .output()
+  ).await {
+    Ok(Ok(output)) => output,
+    Ok(Err(e)) => {
       error!("{}", e);
+      return None;
+    }
+    Err(_) => {
+      error!("get_port_opener_path timed out for port {}", port);
       return None;
     }
   };
@@ -32,15 +38,20 @@ pub(crate) fn get_port_opener_path(port: String) -> Option<String> {
       if let Some(pid_str) = parts.last() {
         match pid_str.parse::<usize>() {
           Ok(pid) => {
-            let mut system = System::new_all();
-            if let Some(proc) = extract_parent_process(Pid::from(pid), &mut system) {
-              if let Some(exe_path) = proc.exe().to_str() {
-                return Some(exe_path.to_string());
-              } else {
-                error!("Failed to convert process path to string for pid: {}", pid);
+            // sysinfo の重い処理を spawn_blocking で実行
+            let result = tokio::task::spawn_blocking(move || {
+              let mut system = System::new();
+              system.refresh_processes();
+              extract_parent_process_path(Pid::from(pid), &mut system)
+            }).await;
+            match result {
+              Ok(Some(path)) => return Some(path),
+              Ok(None) => {
+                error!("Failed to extract parent process for pid: {}", pid);
               }
-            } else {
-              error!("Failed to extract parent process for pid: {}", pid);
+              Err(e) => {
+                error!("spawn_blocking failed: {}", e);
+              }
             }
           }
           Err(e) => error!("failed to parse pid: {}: {}", pid_str, e),
@@ -66,8 +77,7 @@ fn is_os_level_executable(path: &Path) -> bool {
   path.starts_with("C:\\Windows\\") || path.ends_with("explorer.exe") || path.ends_with("ssp.exe")
 }
 
-fn extract_parent_process(pid: Pid, system: &mut System) -> Option<&Process> {
-  system.refresh_all();
+fn extract_parent_process_path(pid: Pid, system: &mut System) -> Option<String> {
   if let Some(process) = system.process(pid) {
     let mut r = process;
     while let Some(ppid) = r.parent() {
@@ -81,7 +91,7 @@ fn extract_parent_process(pid: Pid, system: &mut System) -> Option<&Process> {
         break;
       }
     }
-    Some(r)
+    r.exe().to_str().map(|s| s.to_string())
   } else {
     None
   }
@@ -103,8 +113,8 @@ pub(crate) fn boot_engine(engine: Engine) -> Result<(), Box<dyn std::error::Erro
   };
 
   // do nothing when already booted
-  let mut system = System::new_all();
-  system.refresh_all();
+  let mut system = System::new();
+  system.refresh_processes();
   for process in system.processes().values() {
     if let Some(exe_path) = process.exe().to_str() {
       if exe_path == path {

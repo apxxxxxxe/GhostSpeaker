@@ -11,6 +11,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use voicevox_family::speaker::VoicevoxFamilySpeakerGetter;
 
+
+pub(crate) static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+  reqwest::Client::builder()
+    .connect_timeout(std::time::Duration::from_secs(5))
+    .timeout(std::time::Duration::from_secs(30))
+    .build()
+    .expect("Failed to build HTTP client")
+});
+
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Engine {
   CoeiroInkV2,

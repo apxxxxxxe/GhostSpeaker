@@ -11,7 +11,7 @@ pub(crate) fn connect() -> Result<TcpStream, Box<dyn Error>> {
     IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
     Engine::BouyomiChan.port() as u16,
   );
-  let stream = TcpStream::connect(address)?;
+  let stream = TcpStream::connect_timeout(&address, std::time::Duration::from_secs(5))?;
 
   Ok(stream)
 }

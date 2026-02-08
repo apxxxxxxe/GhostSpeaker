@@ -20,12 +20,13 @@ pub(crate) fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   }
 
   // 同期設定チェック
-  let sync_enabled = GHOSTS_VOICES
-    .read()
-    .unwrap()
-    .get(&ghost_name)
-    .map(|info| info.sync_speech_to_balloon)
-    .unwrap_or(false);
+  let sync_enabled = match GHOSTS_VOICES.read() {
+    Ok(gv) => gv.get(&ghost_name).map(|info| info.sync_speech_to_balloon).unwrap_or(false),
+    Err(e) => {
+      error!("Failed to read GHOSTS_VOICES: {}", e);
+      false
+    }
+  };
 
   if !sync_enabled {
     debug!("pushing to prediction");
@@ -99,7 +100,10 @@ pub(crate) fn on_sync_speech_continue(req: &PluginRequest) -> PluginResponse {
         )
       } else {
         // 最後のセグメント → チェーン終了、ステートクリア
-        *SYNC_STATE.lock().unwrap() = None;
+        match SYNC_STATE.lock() {
+          Ok(mut s) => *s = None,
+          Err(e) => error!("Failed to lock SYNC_STATE: {}", e),
+        }
         format!("\\C{}{}", scope_to_tag(seg.scope), seg.raw_text)
       };
       new_response_with_script(script, false)
@@ -114,7 +118,10 @@ pub(crate) fn on_sync_speech_continue(req: &PluginRequest) -> PluginResponse {
         new_response_with_script(script, false)
       } else {
         // 異常系: セグメントなし & 合成完了 → ステートクリアしてNoContent
-        *SYNC_STATE.lock().unwrap() = None;
+        match SYNC_STATE.lock() {
+          Ok(mut s) => *s = None,
+          Err(e) => error!("Failed to lock SYNC_STATE: {}", e),
+        }
         new_response_nocontent()
       }
     }

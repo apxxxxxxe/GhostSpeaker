@@ -70,7 +70,7 @@ impl Predictor for CoeiroinkV2Predictor {
     };
 
     let wav: Vec<u8>;
-    match reqwest::Client::new()
+    match crate::engine::HTTP_CLIENT.clone()
       .post(URL)
       .header("Content-Type", "application/json")
       .header("Accept", "audio/wav")
