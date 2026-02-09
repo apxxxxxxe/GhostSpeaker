@@ -12,7 +12,7 @@ mod system;
 mod variables;
 
 use crate::plugin::request::PluginRequest;
-use crate::queue::{init_queues, stop_queues, RUNTIME};
+use crate::queue::{init_queues, shutdown_runtime, stop_async_tasks, RUNTIME};
 use crate::system::boot_engine;
 use crate::variables::rawvariables::copy_from_raw;
 use crate::variables::rawvariables::save_variables;
@@ -156,11 +156,14 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
 
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
+  if stop_async_tasks().is_err() {
+    error!("Failed to stop async tasks");
+  }
   if save_variables().is_err() {
     error!("Failed to save variables");
   }
-  if stop_queues().is_err() {
-    error!("Failed to stop queues");
+  if shutdown_runtime().is_err() {
+    error!("Failed to shutdown runtime");
   }
 
   debug!("unload");

@@ -160,7 +160,7 @@ fn split_dialog_local(src: String) -> Vec<Dialog> {
         _ => unreachable!(),
       };
     } else if let Some(char) = char {
-      scope = char.parse().unwrap();
+      scope = char.parse().unwrap_or(0);
     } else {
       unreachable!();
     }

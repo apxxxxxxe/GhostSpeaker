@@ -311,13 +311,13 @@ pub(crate) fn init_queues() {
   init_play_queue();
 }
 
-pub(crate) fn stop_queues() -> Result<
+pub(crate) fn stop_async_tasks() -> Result<
   (),
   std::sync::PoisonError<
     std::sync::MutexGuard<'static, std::option::Option<tokio::runtime::Runtime>>,
   >,
 > {
-  debug!("{}", "stopping queue");
+  debug!("{}", "stopping async tasks");
 
   // 同期再生ステートをクリア
   match SYNC_STATE.lock() {
@@ -393,7 +393,17 @@ pub(crate) fn stop_queues() -> Result<
     warn!("Runtime was not initialized, skipping graceful shutdown");
   }
   
-  debug!("{}", "stopped queue");
+  debug!("{}", "stopped async tasks");
+  Ok(())
+}
+
+pub(crate) fn shutdown_runtime() -> Result<
+  (),
+  std::sync::PoisonError<
+    std::sync::MutexGuard<'static, std::option::Option<tokio::runtime::Runtime>>,
+  >,
+> {
+  debug!("{}", "shutting down runtime");
   if let Some(runtime) = RUNTIME.lock()?.take() {
     runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
   }

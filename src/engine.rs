@@ -17,7 +17,10 @@ pub(crate) static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     .connect_timeout(std::time::Duration::from_secs(5))
     .timeout(std::time::Duration::from_secs(30))
     .build()
-    .expect("Failed to build HTTP client")
+    .unwrap_or_else(|e| {
+      error!("Failed to build HTTP client with custom settings: {}", e);
+      reqwest::Client::new()
+    })
 });
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]

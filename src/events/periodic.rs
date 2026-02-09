@@ -20,10 +20,19 @@ pub(crate) fn on_second_change(_req: &PluginRequest) -> PluginResponse {
   let update: String;
   let update_checked;
   {
-    update_checked = *UPDATE_CHECKED.lock().unwrap();
+    update_checked = match UPDATE_CHECKED.lock() {
+      Ok(uc) => *uc,
+      Err(e) => {
+        error!("Failed to lock UPDATE_CHECKED: {}", e);
+        true // フォールバック: 更新チェック済みとして扱う
+      }
+    };
   }
   if !update_checked {
-    *UPDATE_CHECKED.lock().unwrap() = true;
+    match UPDATE_CHECKED.lock() {
+      Ok(mut uc) => *uc = true,
+      Err(e) => error!("Failed to lock UPDATE_CHECKED for write: {}", e),
+    }
     update = format!("\\C\\![updateother,--plugin={}]", PLUGIN_NAME);
   } else {
     update = String::new();
