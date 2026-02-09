@@ -29,12 +29,17 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use winapi::ctypes::c_long;
 use winapi::shared::minwindef::{BOOL, FALSE, HGLOBAL, TRUE};
-use winapi::um::errhandlingapi::AddVectoredExceptionHandler;
+use winapi::um::errhandlingapi::{AddVectoredExceptionHandler, RemoveVectoredExceptionHandler};
 use winapi::um::winnt::{EXCEPTION_POINTERS, LONG};
 use winapi::vc::excpt::EXCEPTION_CONTINUE_SEARCH;
 
+use std::sync::atomic::{AtomicPtr, Ordering};
+
 /// VEH ハンドラ用ログファイルパス
 static VEH_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// VEH ハンドル（unload 時に RemoveVectoredExceptionHandler で削除するため保持）
+static VEH_HANDLE: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
 unsafe extern "system" fn veh_handler(info: *mut EXCEPTION_POINTERS) -> LONG {
   let record = (*info).ExceptionRecord;
@@ -133,7 +138,8 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
   // VEH (Vectored Exception Handler) を登録
   // ACCESS_VIOLATION 等の SEH 例外をログに記録するため
   unsafe {
-    AddVectoredExceptionHandler(1, Some(veh_handler));
+    let handle = AddVectoredExceptionHandler(1, Some(veh_handler));
+    VEH_HANDLE.store(handle, Ordering::Release);
   }
 
   if let Ok(log_writer) = File::create(&log_path) {
@@ -211,6 +217,14 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
 
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
+  // VEH ハンドラを削除（DLLアンロード前に必須）
+  let veh = VEH_HANDLE.swap(std::ptr::null_mut(), Ordering::AcqRel);
+  if !veh.is_null() {
+    unsafe {
+      RemoveVectoredExceptionHandler(veh);
+    }
+  }
+
   if stop_async_tasks().is_err() {
     error!("Failed to stop async tasks");
   }
