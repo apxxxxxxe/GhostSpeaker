@@ -13,7 +13,6 @@ use std::time::{Duration, Instant};
 
 // タイムアウト定数
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(8);
-const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const QUEUE_POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 use std::collections::{HashMap, VecDeque};
@@ -498,16 +497,20 @@ pub(crate) fn stop_async_tasks() -> Result<
   Ok(())
 }
 
-pub(crate) fn shutdown_runtime() -> Result<
-  (),
-  std::sync::PoisonError<
-    std::sync::MutexGuard<'static, std::option::Option<tokio::runtime::Runtime>>,
-  >,
-> {
+pub(crate) fn shutdown_runtime() -> Result<(), String> {
   debug!("{}", "shutting down runtime");
-  if let Some(runtime) = RUNTIME.lock()?.take() {
-    runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
+  let runtime = match RUNTIME.lock() {
+    Ok(mut guard) => guard.take(),
+    Err(e) => return Err(format!("Failed to lock RUNTIME: {}", e)),
+  };
+  if let Some(runtime) = runtime {
+    // shutdown_timeout ではなく drop を使う。
+    // Drop 実装は全ワーカースレッドと全 blocking スレッドを join する。
+    // shutdown_timeout はタイムアウト後に blocking スレッドを detach するため、
+    // FreeLibrary 後にアンマップ済みコードを実行してクラッシュする。
+    drop(runtime);
   }
+  debug!("{}", "runtime shutdown complete");
   Ok(())
 }
 

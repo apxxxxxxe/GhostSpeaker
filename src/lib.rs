@@ -75,25 +75,33 @@ extern crate simplelog;
 
 #[no_mangle]
 pub extern "cdecl" fn loadu(h: HGLOBAL, len: c_long) -> BOOL {
-  let v = GStr::capture(h, len as usize);
-  let s = match v.to_utf8_str() {
-    Ok(st) => {
-      // UTF-8に変換
-      st.to_string()
-    }
-    Err(e) => {
-      eprintln!("Failed to convert HGLOBAL to UTF-8: {:?}", e);
-      return FALSE;
-    }
-  };
+  match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let v = GStr::capture(h, len as usize);
+    let s = match v.to_utf8_str() {
+      Ok(st) => {
+        // UTF-8に変換
+        st.to_string()
+      }
+      Err(e) => {
+        eprintln!("Failed to convert HGLOBAL to UTF-8: {:?}", e);
+        return FALSE;
+      }
+    };
 
-  match common_load_process(&s) {
-    Ok(_) => {
-      debug!("loadu");
-      TRUE
+    match common_load_process(&s) {
+      Ok(_) => {
+        debug!("loadu");
+        TRUE
+      }
+      Err(_) => {
+        eprintln!("Failed to load plugin");
+        FALSE
+      }
     }
+  })) {
+    Ok(v) => v,
     Err(_) => {
-      eprintln!("Failed to load plugin");
+      eprintln!("PANIC in loadu");
       FALSE
     }
   }
@@ -101,35 +109,43 @@ pub extern "cdecl" fn loadu(h: HGLOBAL, len: c_long) -> BOOL {
 
 #[no_mangle]
 pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
-  let v = GStr::capture(h, len as usize);
-  let s: String;
-  match v.to_utf8_str() {
-    Ok(st) => {
-      // UTF-8に変換
-      s = st.to_string();
-    }
-    Err(e) => {
-      eprintln!("Failed to convert HGLOBAL to UTF-8: {:?}", e);
-      match v.to_ansi_str() {
-        Ok(st) => {
-          // ANSIに変換
-          s = st.to_string_lossy().to_string();
-        }
-        Err(e) => {
-          eprintln!("Failed to convert HGLOBAL to ANSI: {:?}", e);
-          return FALSE;
+  match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let v = GStr::capture(h, len as usize);
+    let s: String;
+    match v.to_utf8_str() {
+      Ok(st) => {
+        // UTF-8に変換
+        s = st.to_string();
+      }
+      Err(e) => {
+        eprintln!("Failed to convert HGLOBAL to UTF-8: {:?}", e);
+        match v.to_ansi_str() {
+          Ok(st) => {
+            // ANSIに変換
+            s = st.to_string_lossy().to_string();
+          }
+          Err(e) => {
+            eprintln!("Failed to convert HGLOBAL to ANSI: {:?}", e);
+            return FALSE;
+          }
         }
       }
-    }
-  };
+    };
 
-  match common_load_process(&s) {
-    Ok(_) => {
-      debug!("load");
-      TRUE
+    match common_load_process(&s) {
+      Ok(_) => {
+        debug!("load");
+        TRUE
+      }
+      Err(_) => {
+        eprintln!("Failed to load plugin");
+        FALSE
+      }
     }
+  })) {
+    Ok(v) => v,
     Err(_) => {
-      eprintln!("Failed to load plugin");
+      eprintln!("PANIC in load");
       FALSE
     }
   }
@@ -218,57 +234,90 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
 
 #[no_mangle]
 pub extern "cdecl" fn unload() -> BOOL {
-  // VEH ハンドラを削除（DLLアンロード前に必須）
-  let veh = VEH_HANDLE.swap(std::ptr::null_mut(), Ordering::AcqRel);
-  if !veh.is_null() {
-    unsafe {
-      RemoveVectoredExceptionHandler(veh);
+  match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    // 1. panic hook を除去（FreeLibrary 後の dangling 防止）
+    let _ = panic::take_hook();
+
+    // 2. VEH ハンドラを削除（DLLアンロード前に必須）
+    let veh = VEH_HANDLE.swap(std::ptr::null_mut(), Ordering::AcqRel);
+    if !veh.is_null() {
+      unsafe {
+        RemoveVectoredExceptionHandler(veh);
+      }
+    }
+
+    // 3. 非同期タスク停止
+    if stop_async_tasks().is_err() {
+      error!("Failed to stop async tasks");
+    }
+
+    // 4. 変数保存
+    if save_variables().is_err() {
+      error!("Failed to save variables");
+    }
+
+    // 5. ログフラッシュ（ランタイム停止前に確実にフラッシュ）
+    log::logger().flush();
+
+    // 6. ランタイム停止（全スレッド join）
+    if shutdown_runtime().is_err() {
+      error!("Failed to shutdown runtime");
+    }
+
+    debug!("unload");
+
+    TRUE
+  })) {
+    Ok(v) => v,
+    Err(_) => {
+      eprintln!("PANIC in unload, attempting emergency shutdown");
+      let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = shutdown_runtime();
+      }));
+      TRUE
     }
   }
-
-  if stop_async_tasks().is_err() {
-    error!("Failed to stop async tasks");
-  }
-  if save_variables().is_err() {
-    error!("Failed to save variables");
-  }
-  if shutdown_runtime().is_err() {
-    error!("Failed to shutdown runtime");
-  }
-
-  debug!("unload");
-
-  TRUE
 }
 
 #[allow(clippy::missing_safety_doc)]
 #[no_mangle]
 pub extern "cdecl" fn request(h: HGLOBAL, len: &mut c_long) -> HGLOBAL {
-  const RESPONSE_400: &str = "SHIORI/3.0 400 Bad Request\r\n\r\n";
-  let v = GStr::capture(h, *len as usize);
-  let s = match v.to_utf8_str() {
-    Ok(s) => s,
+  match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    const RESPONSE_400: &str = "SHIORI/3.0 400 Bad Request\r\n\r\n";
+    let v = GStr::capture(h, *len as usize);
+    let s = match v.to_utf8_str() {
+      Ok(s) => s,
+      Err(_) => {
+        let response_gstr = GStr::clone_from_slice_nofree(RESPONSE_400.as_bytes());
+        *len = response_gstr.len() as c_long;
+        return response_gstr.handle();
+      }
+    };
+
+    let pr = match PluginRequest::parse(s) {
+      Ok(pr) => pr,
+      Err(_) => {
+        let response_gstr = GStr::clone_from_slice_nofree(RESPONSE_400.as_bytes());
+        *len = response_gstr.len() as c_long;
+        return response_gstr.handle();
+      }
+    };
+
+    let response = events::handle_request(&pr);
+
+    let bytes = response.to_string().into_bytes();
+    let response_gstr = GStr::clone_from_slice_nofree(&bytes);
+
+    *len = response_gstr.len() as c_long;
+    response_gstr.handle()
+  })) {
+    Ok(h) => h,
     Err(_) => {
-      let response_gstr = GStr::clone_from_slice_nofree(RESPONSE_400.as_bytes());
+      eprintln!("PANIC in request");
+      const RESPONSE_500: &str = "SHIORI/3.0 500 Internal Server Error\r\n\r\n";
+      let response_gstr = GStr::clone_from_slice_nofree(RESPONSE_500.as_bytes());
       *len = response_gstr.len() as c_long;
-      return response_gstr.handle();
+      response_gstr.handle()
     }
-  };
-
-  let pr = match PluginRequest::parse(s) {
-    Ok(pr) => pr,
-    Err(_) => {
-      let response_gstr = GStr::clone_from_slice_nofree(RESPONSE_400.as_bytes());
-      *len = response_gstr.len() as c_long;
-      return response_gstr.handle();
-    }
-  };
-
-  let response = events::handle_request(&pr);
-
-  let bytes = response.to_string().into_bytes();
-  let response_gstr = GStr::clone_from_slice_nofree(&bytes);
-
-  *len = response_gstr.len() as c_long;
-  response_gstr.handle()
+  }
 }
