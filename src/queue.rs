@@ -25,11 +25,18 @@ pub(crate) static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
   Lazy::new(|| StdMutex::new(Vec::new()));
 
 pub(crate) static RUNTIME: Lazy<StdMutex<Option<tokio::runtime::Runtime>>> =
-  Lazy::new(|| match tokio::runtime::Runtime::new() {
-    Ok(runtime) => StdMutex::new(Some(runtime)),
-    Err(e) => {
-      error!("Failed to create tokio runtime: {}", e);
-      StdMutex::new(None)
+  Lazy::new(|| {
+    match tokio::runtime::Builder::new_multi_thread()
+      .worker_threads(4)
+      .max_blocking_threads(4)
+      .enable_all()
+      .build()
+    {
+      Ok(runtime) => StdMutex::new(Some(runtime)),
+      Err(e) => {
+        error!("Failed to create tokio runtime: {}", e);
+        StdMutex::new(None)
+      }
     }
   });
 pub(crate) static SPEAK_HANDLERS: Lazy<Mutex<Vec<tokio::task::JoinHandle<()>>>> =

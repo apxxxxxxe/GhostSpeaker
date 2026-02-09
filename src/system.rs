@@ -1,10 +1,14 @@
 use crate::engine::Engine;
 use crate::variables::*;
+use once_cell::sync::Lazy;
 use std::path::Path;
 use std::process::Command;
+use std::sync::Mutex as StdMutex;
 use sysinfo::{Pid, ProcessExt, System, SystemExt};
 
 use winapi::um::winbase::CREATE_NO_WINDOW;
+
+static PORT_OPENER_MUTEX: Lazy<StdMutex<()>> = Lazy::new(|| StdMutex::new(()));
 
 pub(crate) async fn get_port_opener_path(port: String) -> Option<String> {
   match tokio::task::spawn_blocking(move || get_port_opener_path_sync(&port)).await {
@@ -18,6 +22,14 @@ pub(crate) async fn get_port_opener_path(port: String) -> Option<String> {
 
 fn get_port_opener_path_sync(port: &str) -> Option<String> {
   use std::os::windows::process::CommandExt;
+
+  let _guard = match PORT_OPENER_MUTEX.lock() {
+    Ok(g) => g,
+    Err(e) => {
+      error!("Failed to lock PORT_OPENER_MUTEX: {}", e);
+      return None;
+    }
+  };
 
   let output = match Command::new("cmd")
     .args(["/C", &format!("netstat -ano | findstr LISTENING | findstr {}", port)])
@@ -95,7 +107,7 @@ fn extract_parent_process_path(pid: Pid, system: &mut System) -> Option<String> 
   }
 }
 
-pub(crate) fn boot_engine(engine: Engine) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn boot_engine(engine: Engine, system: &System) -> Result<(), Box<dyn std::error::Error>> {
   let engine_path = match ENGINE_PATH.read() {
     Ok(ep) => ep,
     Err(e) => {
@@ -111,8 +123,6 @@ pub(crate) fn boot_engine(engine: Engine) -> Result<(), Box<dyn std::error::Erro
   };
 
   // do nothing when already booted
-  let mut system = System::new();
-  system.refresh_processes();
   for process in system.processes().values() {
     if let Some(exe_path) = process.exe().to_str() {
       if exe_path == path {

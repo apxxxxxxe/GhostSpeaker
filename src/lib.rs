@@ -140,11 +140,15 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
       }
     }
   };
-  for (engine, auto_start) in engine_auto_start.iter()
   {
-    if *auto_start {
-      if let Err(e) = boot_engine(*engine) {
-        error!("Failed to boot {}: {}", engine.name(), e);
+    use sysinfo::{System, SystemExt};
+    let mut system = System::new();
+    system.refresh_processes();
+    for (engine, auto_start) in engine_auto_start.iter() {
+      if *auto_start {
+        if let Err(e) = boot_engine(*engine, &system) {
+          error!("Failed to boot {}: {}", engine.name(), e);
+        }
       }
     }
   }
