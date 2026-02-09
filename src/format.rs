@@ -86,16 +86,23 @@ pub(crate) fn split_by_punctuation_with_raw(
 
   for clean_seg in &clean_segments {
     let raw_start = raw_pos;
-    for _ in clean_seg.chars() {
+    for c in clean_seg.chars() {
       // タグをスキップ
       while tag_idx < tag_ranges.len() && tag_ranges[tag_idx].0 == raw_pos {
         raw_pos = tag_ranges[tag_idx].1;
         tag_idx += 1;
       }
-      // テキスト文字を消費
+      // テキスト文字を消費 - rawの文字と一致する場合のみ
       if raw_pos < raw_bytes.len() {
         let ch_len = utf8_char_len(raw_bytes[raw_pos]);
-        raw_pos += ch_len;
+        let end = (raw_pos + ch_len).min(raw_bytes.len());
+        let raw_char = std::str::from_utf8(&raw_bytes[raw_pos..end])
+          .ok()
+          .and_then(|s| s.chars().next());
+        if raw_char == Some(c) {
+          raw_pos += ch_len;
+        }
+        // 一致しない場合: cleanにのみ存在する人工文字なのでrawは進めない
       }
     }
     // 次のテキスト文字の直前までのタグも含める
