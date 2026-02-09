@@ -3,8 +3,8 @@ use crate::format::{is_ellipsis_segment, scope_to_tag};
 use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::queue::{
-  build_segments, cancel_sync_playback, is_sync_audio_done, pop_ready_segment,
-  push_to_prediction, spawn_sync_playback, spawn_sync_prediction, sync_predict,
+  build_segments, cancel_sync_playback, get_runtime_handle, is_sync_audio_done,
+  pop_ready_segment, push_to_prediction, spawn_sync_playback, spawn_sync_prediction,
   SYNC_STATE,
 };
 use crate::variables::*;
@@ -55,7 +55,21 @@ pub(crate) fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let wav = if is_ellipsis_segment(&first.text) {
     Vec::new()
   } else {
-    sync_predict(&*first.predictor).unwrap_or_default()
+    match get_runtime_handle() {
+      Some(handle) => {
+        let result: Result<Vec<u8>, String> = handle.block_on(async {
+          tokio::time::timeout(std::time::Duration::from_secs(30), first.predictor.predict())
+            .await
+            .map_err(|_| "predict timed out".to_string())
+            .and_then(|r| r.map_err(|e| e.to_string()))
+        });
+        result.unwrap_or_default()
+      }
+      None => {
+        error!("Runtime not available for sync predict");
+        Vec::new()
+      }
+    }
   };
   spawn_sync_playback(wav);
 

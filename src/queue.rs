@@ -23,20 +23,30 @@ pub(crate) static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
   Lazy::new(|| StdMutex::new(Vec::new()));
 
 pub(crate) static RUNTIME: Lazy<StdMutex<Option<tokio::runtime::Runtime>>> =
-  Lazy::new(|| {
+  Lazy::new(|| StdMutex::new(None));
+
+/// 必要に応じてランタイムを作成する（DLLリロード後の再生成に対応）
+fn ensure_runtime() {
+  let mut guard = match RUNTIME.lock() {
+    Ok(g) => g,
+    Err(e) => {
+      error!("Failed to lock RUNTIME in ensure_runtime: {}", e);
+      return;
+    }
+  };
+  if guard.is_none() {
     match tokio::runtime::Builder::new_multi_thread()
       .worker_threads(1)
-      .max_blocking_threads(2)
+      .max_blocking_threads(4)
       .enable_all()
       .build()
     {
-      Ok(runtime) => StdMutex::new(Some(runtime)),
-      Err(e) => {
-        error!("Failed to create tokio runtime: {}", e);
-        StdMutex::new(None)
-      }
+      Ok(runtime) => *guard = Some(runtime),
+      Err(e) => error!("Failed to create tokio runtime: {}", e),
     }
-  });
+  }
+}
+
 /// RUNTIMEからtokioハンドルを安全に取得する
 pub(crate) fn get_runtime_handle() -> Option<tokio::runtime::Handle> {
   match RUNTIME.lock() {
@@ -331,10 +341,13 @@ pub(crate) fn init_queues() {
   // 同期世代カウンタをリセット（DLLがメモリに残ったままunload→loadされた場合の不整合防止）
   SYNC_AUDIO_GENERATION.store(0, Ordering::Release);
   SYNC_AUDIO_DONE_GEN.store(0, Ordering::Release);
-  // 同期スレッドハンドルをクリア
-  if let Ok(mut handles) = SYNC_THREAD_HANDLES.lock() {
-    handles.clear();
+  // 同期予測ハンドラをクリア
+  if let Ok(mut h) = SYNC_PREDICTION_HANDLER.lock() {
+    *h = None;
   }
+
+  // ランタイムを必要に応じて作成（DLLリロード後の再生成対応）
+  ensure_runtime();
 
   init_speak_queue();
   init_predict_queue();
@@ -370,6 +383,15 @@ pub(crate) fn stop_async_tasks() -> Result<
     SPEAK_QUEUE_STOPPER.store(true, Ordering::Release);
     debug!("{}", "set all stop flags");
     
+    // 同期予測ハンドラもabort
+    if let Ok(mut h) = SYNC_PREDICTION_HANDLER.lock() {
+      if let Some(handle) = h.take() {
+        if !handle.is_finished() {
+          handle.abort();
+        }
+      }
+    }
+
     // 協調的停止を待機
     let start_time = Instant::now();
     while start_time.elapsed() < GRACEFUL_SHUTDOWN_TIMEOUT {
@@ -439,32 +461,6 @@ pub(crate) fn stop_async_tasks() -> Result<
     }
   } else {
     warn!("Runtime was not initialized, skipping graceful shutdown");
-  }
-  
-  // 同期スレッドの JoinHandle を回収して join する
-  match SYNC_THREAD_HANDLES.lock() {
-    Ok(mut handles) => {
-      let handles_to_join: Vec<_> = handles.drain(..).collect();
-      drop(handles); // ロック解放してから join
-      let join_start = Instant::now();
-      for h in handles_to_join {
-        let remaining = GRACEFUL_SHUTDOWN_TIMEOUT.saturating_sub(join_start.elapsed());
-        if remaining.is_zero() {
-          warn!("Timeout waiting for sync threads to finish");
-          break;
-        }
-        let poll_start = Instant::now();
-        while !h.is_finished() && poll_start.elapsed() < remaining {
-          std::thread::sleep(Duration::from_millis(50));
-        }
-        if h.is_finished() {
-          let _ = h.join();
-        } else {
-          warn!("Sync thread did not finish within timeout");
-        }
-      }
-    }
-    Err(e) => error!("Failed to lock SYNC_THREAD_HANDLES during shutdown: {}", e),
   }
 
   crate::system::cleanup_system_cache();
@@ -707,60 +703,33 @@ static SYNC_AUDIO_GENERATION: std::sync::atomic::AtomicU64 =
 static SYNC_AUDIO_DONE_GEN: std::sync::atomic::AtomicU64 =
   std::sync::atomic::AtomicU64::new(0);
 
-static SYNC_THREAD_HANDLES: Lazy<StdMutex<Vec<std::thread::JoinHandle<()>>>> =
-  Lazy::new(|| StdMutex::new(Vec::new()));
+pub(crate) static SYNC_PREDICTION_HANDLER: Lazy<StdMutex<Option<tokio::task::JoinHandle<()>>>> =
+  Lazy::new(|| StdMutex::new(None));
 
-/// シャットダウン待機用ヘルパー: SHUTTING_DOWNフラグを100msごとにポーリング
-async fn wait_for_shutdown() {
-  loop {
-    if SHUTTING_DOWN.load(Ordering::Acquire) {
-      return;
-    }
-    tokio::time::sleep(Duration::from_millis(100)).await;
-  }
-}
-
-/// 同期モード用: Predictor.predict() を同期的に呼び出す
-pub(crate) fn sync_predict(
-  predictor: &dyn Predictor,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-  if SHUTTING_DOWN.load(Ordering::Acquire) {
-    return Err("shutting down".into());
-  }
-  let handle = get_runtime_handle().ok_or("Runtime not available")?;
-  handle.block_on(async {
-    tokio::select! {
-      result = tokio::time::timeout(Duration::from_secs(30), predictor.predict()) => {
-        result
-          .map_err(|_| -> Box<dyn std::error::Error> { "predict timed out".into() })?
-      }
-      _ = wait_for_shutdown() => {
-        Err("shutting down".into())
-      }
-    }
-  })
-}
 
 pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
   let gen = SYNC_AUDIO_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
   // cancel_sync_playback で設定された FORCE_STOP_SINK をリセット
   crate::player::FORCE_STOP_SINK.store(false, Ordering::Release);
-  let handle = std::thread::spawn(move || {
+  let Some(handle) = get_runtime_handle() else {
+    error!("Runtime is not available for sync playback");
+    SYNC_AUDIO_DONE_GEN.fetch_max(gen, Ordering::SeqCst);
+    return;
+  };
+  handle.spawn(async move {
     if !wav.is_empty() {
-      let _ = play_wav(wav);
+      match tokio::task::spawn_blocking(move || {
+        play_wav(wav).map_err(|e| e.to_string())
+      })
+      .await
+      {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => error!("sync play_wav failed: {}", e),
+        Err(e) => error!("sync play_wav spawn_blocking failed: {}", e),
+      }
     }
     SYNC_AUDIO_DONE_GEN.fetch_max(gen, Ordering::SeqCst);
   });
-  match SYNC_THREAD_HANDLES.lock() {
-    Ok(mut handles) => {
-      handles.retain(|h| !h.is_finished());
-      handles.push(handle);
-    }
-    Err(e) => {
-      error!("Failed to lock SYNC_THREAD_HANDLES: {}", e);
-      let _ = handle.join();
-    }
-  }
 }
 
 pub(crate) fn is_sync_audio_done() -> bool {
@@ -772,6 +741,14 @@ pub(crate) fn cancel_sync_playback() {
   match SYNC_STATE.lock() {
     Ok(mut s) => *s = None,
     Err(e) => error!("Failed to lock SYNC_STATE in cancel: {}", e),
+  }
+  // 進行中の予測タスクを即座に停止
+  if let Ok(mut h) = SYNC_PREDICTION_HANDLER.lock() {
+    if let Some(handle) = h.take() {
+      if !handle.is_finished() {
+        handle.abort();
+      }
+    }
   }
   crate::player::FORCE_STOP_SINK.store(true, Ordering::Release);
 }
@@ -793,7 +770,12 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
     }
   }
 
-  let handle = std::thread::spawn(move || {
+  let Some(handle) = get_runtime_handle() else {
+    error!("Runtime is not available for sync prediction");
+    return;
+  };
+
+  let task_handle = handle.spawn(async move {
     for segment in segments {
       // シャットダウンチェック
       if SHUTTING_DOWN.load(Ordering::Acquire) {
@@ -817,7 +799,19 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
       let wav = if is_ellipsis_segment(&segment.text) {
         Vec::new()
       } else {
-        sync_predict(&*segment.predictor).unwrap_or_default()
+        // predictは元々async関数なので直接awaitで呼び出す
+        let wav_result: Result<Vec<u8>, String> =
+          tokio::time::timeout(Duration::from_secs(30), segment.predictor.predict())
+            .await
+            .map_err(|_| "predict timed out".to_string())
+            .and_then(|r| r.map_err(|e| e.to_string()));
+        match wav_result {
+          Ok(data) => data,
+          Err(e) => {
+            debug!("sync predict failed: {}", e);
+            Vec::new()
+          }
+        }
       };
 
       // 合成結果をプールに追加
@@ -853,15 +847,10 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
       Err(e) => error!("Failed to lock SYNC_STATE for completion flag: {}", e),
     }
   });
-  match SYNC_THREAD_HANDLES.lock() {
-    Ok(mut handles) => {
-      handles.retain(|h| !h.is_finished());
-      handles.push(handle);
-    }
-    Err(e) => {
-      error!("Failed to lock SYNC_THREAD_HANDLES: {}", e);
-      let _ = handle.join();
-    }
+
+  match SYNC_PREDICTION_HANDLER.lock() {
+    Ok(mut h) => *h = Some(task_handle),
+    Err(e) => error!("Failed to lock SYNC_PREDICTION_HANDLER: {}", e),
   }
 }
 
