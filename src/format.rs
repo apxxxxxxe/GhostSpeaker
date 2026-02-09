@@ -28,17 +28,29 @@ pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
   }
 
   let mut result = Vec::new();
+  let mut accumulated_prefix = String::new();
   for r in raws {
     if r.text.is_empty() {
+      // scopeタグ + raw_textを累積して次の非空Dialogに引き継ぐ
+      accumulated_prefix.push_str(&scope_to_tag(r.scope));
+      accumulated_prefix.push_str(&r.raw_text);
       continue;
     }
+    let raw_text = if accumulated_prefix.is_empty() {
+      r.raw_text.clone()
+    } else {
+      let mut full = std::mem::take(&mut accumulated_prefix);
+      full.push_str(&scope_to_tag(r.scope));
+      full.push_str(&r.raw_text);
+      full
+    };
     for text in r.text.split('\u{0}') {
       if text.is_empty() {
         continue;
       }
       result.push(Dialog {
         text: text.to_string(),
-        raw_text: r.raw_text.clone(),
+        raw_text: raw_text.clone(),
         scope: r.scope,
       });
     }
