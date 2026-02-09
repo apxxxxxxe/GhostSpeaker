@@ -33,7 +33,7 @@ use winapi::um::errhandlingapi::{AddVectoredExceptionHandler, RemoveVectoredExce
 use winapi::um::winnt::{EXCEPTION_POINTERS, LONG};
 use winapi::vc::excpt::EXCEPTION_CONTINUE_SEARCH;
 
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
 
 /// VEH ハンドラ用ログファイルパス
 static VEH_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -41,20 +41,27 @@ static VEH_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 /// VEH ハンドル（unload 時に RemoveVectoredExceptionHandler で削除するため保持）
 static VEH_HANDLE: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
+/// VEH 例外カウンタ（ログ肥大化防止）
+static VEH_EXCEPTION_COUNT: AtomicU32 = AtomicU32::new(0);
+const MAX_VEH_LOG_ENTRIES: u32 = 50;
+
 unsafe extern "system" fn veh_handler(info: *mut EXCEPTION_POINTERS) -> LONG {
   let record = (*info).ExceptionRecord;
   let code = (*record).ExceptionCode;
   // ACCESS_VIOLATION (0xC0000005) など致命的例外のみログ出力
   if code == 0xC0000005 || code == 0xC0000374 {
-    let address = (*record).ExceptionAddress as usize;
-    if let Some(log_path) = VEH_LOG_PATH.get() {
-      if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(log_path) {
-        use std::io::Write;
-        let _ = writeln!(
-          f,
-          "FATAL: SEH exception 0x{:08X} at address 0x{:08X}",
-          code, address
-        );
+    let count = VEH_EXCEPTION_COUNT.fetch_add(1, Ordering::Relaxed);
+    if count < MAX_VEH_LOG_ENTRIES {
+      let address = (*record).ExceptionAddress as usize;
+      if let Some(log_path) = VEH_LOG_PATH.get() {
+        if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(log_path) {
+          use std::io::Write;
+          let _ = writeln!(
+            f,
+            "FATAL: SEH exception 0x{:08X} at address 0x{:08X} (count: {}/{})",
+            code, address, count + 1, MAX_VEH_LOG_ENTRIES
+          );
+        }
       }
     }
   }

@@ -1,4 +1,19 @@
+use once_cell::sync::Lazy;
 use regex::Regex;
+
+static LINES_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\\n(\[[^\]]+\])?)+").unwrap());
+static DELIMS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[！!?？。]").unwrap());
+static ELLIPSIS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[…]+|・{2,}|\.{2,}").unwrap());
+static ELLIPSIS_FULL_RE: Lazy<Regex> =
+  Lazy::new(|| Regex::new(r"^(?:[…]+|・{2,}|\.{2,})$").unwrap());
+static CHANGE_SCOPE_RE: Lazy<Regex> =
+  Lazy::new(|| Regex::new(r"\\([0h1u])|\\p\[([0-9]+)\]").unwrap());
+static SAKURA_SCRIPT_RE: Lazy<Regex> = Lazy::new(|| {
+  Regex::new(r###"\\_{0,2}(w[1-9]|[a-zA-Z0-9*!&\-+](\[("([^"]|\\")+?"|([^\]]|\\\])+?)+?\])?)"###)
+    .unwrap()
+});
+static QUICK_SECTION_TAG_RE: Lazy<Regex> =
+  Lazy::new(|| Regex::new(r"(\\_q|\\!\[quicksection,(0|1|true|false)\])").unwrap());
 
 pub(crate) struct Dialog {
   pub text: String,
@@ -7,7 +22,7 @@ pub(crate) struct Dialog {
 }
 
 pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
-  let lines_re = Regex::new(r"(\\n(\[[^\]]+\])?)+").unwrap();
+  let lines_re = &*LINES_RE;
 
   // raw_text 用: \_qタグだけ除去しテキスト内容は保持、。挿入前
   let raw_dialogs = split_dialog_local(strip_quick_section_tags_only(src.clone()));
@@ -82,22 +97,18 @@ pub(crate) fn is_ellipsis_segment(text: &str) -> bool {
   if text.is_empty() {
     return false;
   }
-  let re = Regex::new(r"^(?:[…]+|・{2,}|\.{2,})$").unwrap();
-  re.is_match(text)
+  ELLIPSIS_FULL_RE.is_match(text)
 }
 
 pub(crate) fn split_by_punctuation(src: String) -> Vec<String> {
-  let delims_re = Regex::new(r"[！!?？。]").unwrap();
-  let ellipsis_re = Regex::new(r"[…]+|・{2,}|\.{2,}").unwrap();
-
-  let t = delims_re.replace_all(&src, "$0\u{0}").to_string();
+  let t = DELIMS_RE.replace_all(&src, "$0\u{0}").to_string();
   let mut result = Vec::new();
   for text in t.split('\u{0}') {
     if text.is_empty() {
       continue;
     }
     // 省略記号で追加分割（省略記号自体を独立セグメントとして保持）
-    for s in split_keeping_delimiters(text, &ellipsis_re) {
+    for s in split_keeping_delimiters(text, &ELLIPSIS_RE) {
       if !s.is_empty() {
         result.push(s);
       }
@@ -221,7 +232,7 @@ pub(crate) fn scope_to_tag(scope: usize) -> String {
 }
 
 fn split_dialog_local(src: String) -> Vec<Dialog> {
-  let change_scope_re = Regex::new(r"\\([0h1u])|\\p\[([0-9]+)\]").unwrap();
+  let change_scope_re = &*CHANGE_SCOPE_RE;
   let mut result = Vec::new();
 
   if src.is_empty() {
@@ -259,9 +270,8 @@ fn split_dialog_local(src: String) -> Vec<Dialog> {
   result
 }
 
-fn sakura_script_regex() -> Regex {
-  Regex::new(r###"\\_{0,2}(w[1-9]|[a-zA-Z0-9*!&\-+](\[("([^"]|\\")+?"|([^\]]|\\\])+?)+?\])?)"###)
-    .unwrap()
+fn sakura_script_regex() -> &'static Regex {
+  &SAKURA_SCRIPT_RE
 }
 
 fn clear_tags(src: String) -> String {
@@ -346,6 +356,5 @@ fn delete_quick_section(src: String) -> String {
 /// 入力: "Hello\_q…\_qWorld" → 出力: "Hello…World"
 /// (delete_quick_section はタグもテキストも両方削除する)
 fn strip_quick_section_tags_only(src: String) -> String {
-  let tag_re = Regex::new(r"(\\_q|\\!\[quicksection,(0|1|true|false)\])").unwrap();
-  tag_re.replace_all(&src, "").to_string()
+  QUICK_SECTION_TAG_RE.replace_all(&src, "").to_string()
 }
