@@ -7,13 +7,12 @@ pub(crate) struct Dialog {
 }
 
 pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
-  let mut s = src.clone();
-  s = delete_quick_section(s);
-
   let lines_re = Regex::new(r"(\\n(\[[^\]]+\])?)+").unwrap();
 
-  // raw_text 用: 。挿入前のテキストで分割
-  let raw_dialogs = split_dialog_local(s.clone());
+  // raw_text 用: \_qタグだけ除去しテキスト内容は保持、。挿入前
+  let raw_dialogs = split_dialog_local(strip_quick_section_tags_only(src.clone()));
+
+  let mut s = delete_quick_section(src);
 
   if devide_by_lines {
     s = lines_re.replace_all(&s, "$0。").to_string();
@@ -101,8 +100,40 @@ pub(crate) fn split_by_punctuation_with_raw(
           .and_then(|s| s.chars().next());
         if raw_char == Some(c) {
           raw_pos += ch_len;
+        } else {
+          // raw に余分な文字がある可能性 → 前方スキャンでマッチを探す
+          let mut scan_pos = raw_pos;
+          let mut scan_tag_idx = tag_idx;
+          let mut found = false;
+          while scan_pos < raw_bytes.len() {
+            // タグをスキップ
+            while scan_tag_idx < tag_ranges.len()
+              && tag_ranges[scan_tag_idx].0 == scan_pos
+            {
+              scan_pos = tag_ranges[scan_tag_idx].1;
+              scan_tag_idx += 1;
+            }
+            if scan_pos >= raw_bytes.len() {
+              break;
+            }
+            let scan_ch_len = utf8_char_len(raw_bytes[scan_pos]);
+            let scan_end = (scan_pos + scan_ch_len).min(raw_bytes.len());
+            let scan_char = std::str::from_utf8(&raw_bytes[scan_pos..scan_end])
+              .ok()
+              .and_then(|s| s.chars().next());
+            if scan_char == Some(c) {
+              // マッチ発見: raw_pos を進めて文字を消費
+              raw_pos = scan_pos + scan_ch_len;
+              tag_idx = scan_tag_idx;
+              found = true;
+              break;
+            }
+            scan_pos += scan_ch_len;
+          }
+          if !found {
+            // 見つからない場合: c は clean にのみ存在する人工文字
+          }
         }
-        // 一致しない場合: cleanにのみ存在する人工文字なのでrawは進めない
       }
     }
     // 次のテキスト文字の直前までのタグも含める
@@ -263,4 +294,12 @@ fn delete_quick_section(src: String) -> String {
     }
   }
   result
+}
+
+/// クイックセクションのタグだけを除去し、タグ間のテキスト内容は保持する。
+/// 入力: "Hello\_q…\_qWorld" → 出力: "Hello…World"
+/// (delete_quick_section はタグもテキストも両方削除する)
+fn strip_quick_section_tags_only(src: String) -> String {
+  let tag_re = Regex::new(r"(\\_q|\\!\[quicksection,(0|1|true|false)\])").unwrap();
+  tag_re.replace_all(&src, "").to_string()
 }
