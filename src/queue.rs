@@ -338,11 +338,28 @@ pub(crate) fn init_queues() {
   SPEAK_QUEUE_STOPPER.store(false, Ordering::Release);
   crate::player::FORCE_STOP_SINK.store(false, Ordering::Release);
 
+  // 前セッションの残留データをクリア（DLLリロードでunloadが不完全だった場合の防御）
+  PREDICT_QUEUE
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clear();
+  PLAY_QUEUE
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clear();
+  CONNECTION_DIALOGS
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clear();
+
   // 同期世代カウンタをリセット（DLLがメモリに残ったままunload→loadされた場合の不整合防止）
   SYNC_AUDIO_GENERATION.store(0, Ordering::Release);
   SYNC_AUDIO_DONE_GEN.store(0, Ordering::Release);
-  // 同期予測ハンドラをクリア
+  // 同期ハンドラをクリア
   if let Ok(mut h) = SYNC_PREDICTION_HANDLER.lock() {
+    *h = None;
+  }
+  if let Ok(mut h) = SYNC_PLAYBACK_HANDLER.lock() {
     *h = None;
   }
 
@@ -383,11 +400,17 @@ pub(crate) fn stop_async_tasks() -> Result<
     SPEAK_QUEUE_STOPPER.store(true, Ordering::Release);
     debug!("{}", "set all stop flags");
     
-    // 同期予測ハンドラもabort
-    if let Ok(mut h) = SYNC_PREDICTION_HANDLER.lock() {
-      if let Some(handle) = h.take() {
-        if !handle.is_finished() {
-          handle.abort();
+    // 同期ハンドラをabort
+    for (name, handler_mutex) in [
+      ("sync_prediction", &*SYNC_PREDICTION_HANDLER),
+      ("sync_playback", &*SYNC_PLAYBACK_HANDLER),
+    ] {
+      if let Ok(mut h) = handler_mutex.lock() {
+        if let Some(handle) = h.take() {
+          if !handle.is_finished() {
+            handle.abort();
+            warn!("Aborted {} handler", name);
+          }
         }
       }
     }
@@ -431,30 +454,22 @@ pub(crate) fn stop_async_tasks() -> Result<
       std::thread::sleep(Duration::from_millis(200));
     }
 
-    // タイムアウト時: abort + take で確実にタスクを消滅させる
-    if start_time.elapsed() >= GRACEFUL_SHUTDOWN_TIMEOUT {
+    // ハンドル回収（graceful停止・タイムアウト共通）
+    // タイムアウト時は未完了タスクをabort
+    let timed_out = start_time.elapsed() >= GRACEFUL_SHUTDOWN_TIMEOUT;
+    if timed_out {
       warn!("Some tasks did not stop within timeout, aborting remaining tasks");
-      if let Ok(mut h) = PLAY_HANDLER.lock() {
+    }
+    for (name, handler_mutex) in [
+      ("play", &*PLAY_HANDLER),
+      ("predict", &*PREDICT_HANDLER),
+      ("speak", &*SPEAK_HANDLERS),
+    ] {
+      if let Ok(mut h) = handler_mutex.lock() {
         if let Some(handle) = h.take() {
           if !handle.is_finished() {
             handle.abort();
-            warn!("Aborted play handler");
-          }
-        }
-      }
-      if let Ok(mut h) = PREDICT_HANDLER.lock() {
-        if let Some(handle) = h.take() {
-          if !handle.is_finished() {
-            handle.abort();
-            warn!("Aborted predict handler");
-          }
-        }
-      }
-      if let Ok(mut h) = SPEAK_HANDLERS.lock() {
-        if let Some(handle) = h.take() {
-          if !handle.is_finished() {
-            handle.abort();
-            warn!("Aborted speak handler");
+            warn!("Aborted {} handler", name);
           }
         }
       }
@@ -462,6 +477,20 @@ pub(crate) fn stop_async_tasks() -> Result<
   } else {
     warn!("Runtime was not initialized, skipping graceful shutdown");
   }
+
+  // キューに残留したデータをクリア
+  PREDICT_QUEUE
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clear();
+  PLAY_QUEUE
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clear();
+  CONNECTION_DIALOGS
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clear();
 
   crate::system::cleanup_system_cache();
 
@@ -483,6 +512,9 @@ pub(crate) fn shutdown_runtime() -> Result<
 }
 
 pub(crate) fn push_to_prediction(text: String, ghost_name: String) {
+  if SHUTTING_DOWN.load(Ordering::Acquire) {
+    return;
+  }
   // StdMutexなのでランタイムハンドル不要
   PREDICT_QUEUE
     .lock()
@@ -706,8 +738,14 @@ static SYNC_AUDIO_DONE_GEN: std::sync::atomic::AtomicU64 =
 pub(crate) static SYNC_PREDICTION_HANDLER: Lazy<StdMutex<Option<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| StdMutex::new(None));
 
+pub(crate) static SYNC_PLAYBACK_HANDLER: Lazy<StdMutex<Option<tokio::task::JoinHandle<()>>>> =
+  Lazy::new(|| StdMutex::new(None));
+
 
 pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
+  if SHUTTING_DOWN.load(Ordering::Acquire) {
+    return;
+  }
   let gen = SYNC_AUDIO_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
   // cancel_sync_playback で設定された FORCE_STOP_SINK をリセット
   crate::player::FORCE_STOP_SINK.store(false, Ordering::Release);
@@ -716,7 +754,7 @@ pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
     SYNC_AUDIO_DONE_GEN.fetch_max(gen, Ordering::SeqCst);
     return;
   };
-  handle.spawn(async move {
+  let task_handle = handle.spawn(async move {
     if !wav.is_empty() {
       match tokio::task::spawn_blocking(move || {
         play_wav(wav).map_err(|e| e.to_string())
@@ -730,6 +768,10 @@ pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
     }
     SYNC_AUDIO_DONE_GEN.fetch_max(gen, Ordering::SeqCst);
   });
+  // 同期再生タスクを追跡
+  if let Ok(mut h) = SYNC_PLAYBACK_HANDLER.lock() {
+    *h = Some(task_handle);
+  }
 }
 
 pub(crate) fn is_sync_audio_done() -> bool {
@@ -755,6 +797,10 @@ pub(crate) fn cancel_sync_playback() {
 
 /// 同期モード用: 全セグメントをバックグラウンドで順次合成し、プールに蓄積する
 pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: String) {
+  if SHUTTING_DOWN.load(Ordering::Acquire) {
+    return;
+  }
+
   // SYNC_STATE を初期化（空の ready_queue）
   match SYNC_STATE.lock() {
     Ok(mut s) => {

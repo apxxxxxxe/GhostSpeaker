@@ -12,6 +12,11 @@ use crate::plugin::response::PluginResponse;
 use shiorust::message::{parts::*, traits::*};
 
 pub(crate) fn handle_request(req: &PluginRequest) -> PluginResponse {
+  // シャットダウン中は全リクエストを拒否
+  if crate::queue::SHUTTING_DOWN.load(std::sync::atomic::Ordering::Acquire) {
+    return new_response_nocontent();
+  }
+
   match req.method {
     Method::GET | Method::NOTIFY => (),
     _ => return new_response_nocontent(),
