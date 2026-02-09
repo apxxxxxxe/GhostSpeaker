@@ -26,8 +26,35 @@ use simplelog::*;
 use std::fs::File;
 use std::panic;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use winapi::ctypes::c_long;
 use winapi::shared::minwindef::{BOOL, FALSE, HGLOBAL, TRUE};
+use winapi::um::errhandlingapi::AddVectoredExceptionHandler;
+use winapi::um::winnt::{EXCEPTION_POINTERS, LONG};
+use winapi::vc::excpt::EXCEPTION_CONTINUE_SEARCH;
+
+/// VEH ハンドラ用ログファイルパス
+static VEH_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+unsafe extern "system" fn veh_handler(info: *mut EXCEPTION_POINTERS) -> LONG {
+  let record = (*info).ExceptionRecord;
+  let code = (*record).ExceptionCode;
+  // ACCESS_VIOLATION (0xC0000005) など致命的例外のみログ出力
+  if code == 0xC0000005 || code == 0xC0000374 {
+    let address = (*record).ExceptionAddress as usize;
+    if let Some(log_path) = VEH_LOG_PATH.get() {
+      if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(log_path) {
+        use std::io::Write;
+        let _ = writeln!(
+          f,
+          "FATAL: SEH exception 0x{:08X} at address 0x{:08X}",
+          code, address
+        );
+      }
+    }
+  }
+  EXCEPTION_CONTINUE_SEARCH
+}
 
 #[macro_use]
 extern crate log;
@@ -99,6 +126,16 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
   // Windows(UTF-16)を想定しPathBufでパスを作成
   let log_path = PathBuf::from(dll_path).join("ghost-speaker.log");
   println!("log_path: {:?}", log_path);
+
+  // VEH 用ログパスを設定（ロガー初期化前でも書き込み可能にする）
+  let _ = VEH_LOG_PATH.set(log_path.clone());
+
+  // VEH (Vectored Exception Handler) を登録
+  // ACCESS_VIOLATION 等の SEH 例外をログに記録するため
+  unsafe {
+    AddVectoredExceptionHandler(1, Some(veh_handler));
+  }
+
   if let Ok(log_writer) = File::create(&log_path) {
     if WriteLogger::init(LevelFilter::Debug, Config::default(), log_writer).is_err() {
       eprintln!("Failed to initialize logger");
@@ -111,6 +148,9 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
     }
   };
 
+  debug!("logger initialized, loading variables");
+  log::logger().flush();
+
   copy_from_raw(&RawGlobalVariables::new(dll_path));
   let mut dll_dir = match DLL_DIR.write() {
     Ok(d) => d,
@@ -118,12 +158,17 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
   };
   *dll_dir = dll_path.to_string();
 
+  debug!("variables loaded, setting panic hook");
+  log::logger().flush();
+
   panic::set_hook(Box::new(|panic_info| {
     error!("{}", panic_info);
     log::logger().flush();
   }));
 
   // 自動起動が設定されているエンジンを起動
+  debug!("checking engine auto-start");
+  log::logger().flush();
   let engine_auto_start = {
     let guard = match RUNTIME.lock() {
       Ok(g) => g,
@@ -153,7 +198,13 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
     }
   }
 
+  debug!("engine boot complete, initializing queues");
+  log::logger().flush();
+
   init_queues();
+
+  debug!("queues initialized, load complete");
+  log::logger().flush();
 
   Ok(())
 }

@@ -51,13 +51,16 @@ fn get_port_opener_path_sync(port: &str) -> Option<String> {
         return None;
       }
     };
+    debug!("netstat found listening process on port {}, querying process info", port);
+    log::logger().flush();
+    let mut system = System::new();
+    system.refresh_processes();
+    log::logger().flush();
     for line in output_str.lines() {
       let parts: Vec<&str> = line.split_whitespace().collect();
       if let Some(pid_str) = parts.last() {
         match pid_str.parse::<usize>() {
           Ok(pid) => {
-            let mut system = System::new();
-            system.refresh_processes();
             if let Some(path) = extract_parent_process_path(Pid::from(pid), &mut system) {
               return Some(path);
             } else {
@@ -76,8 +79,13 @@ fn get_port_opener_path_sync(port: &str) -> Option<String> {
         "Unknown error".to_string()
       }
     };
-    error!("Command failed: {}", error_str);
+    if error_str.is_empty() {
+      debug!("No listening process found on port {}", port);
+    } else {
+      error!("netstat command failed for port {}: {}", port, error_str);
+    }
   }
+  log::logger().flush();
   None
 }
 
