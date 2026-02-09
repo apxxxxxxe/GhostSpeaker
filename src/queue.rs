@@ -8,6 +8,7 @@ use crate::system::get_port_opener_path;
 use crate::variables::GHOSTS_VOICES;
 use crate::variables::*;
 use once_cell::sync::Lazy;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 // タイムアウト定数
@@ -16,7 +17,6 @@ const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const QUEUE_POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
@@ -54,6 +54,8 @@ pub(crate) static PLAY_QUEUE: Lazy<Arc<Mutex<VecDeque<Vec<u8>>>>> =
 pub(crate) static PLAY_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 pub(crate) static SPEAK_QUEUE_STOPPER: Lazy<Arc<Mutex<bool>>> =
   Lazy::new(|| Arc::new(Mutex::new(false)));
+
+pub(crate) static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
 fn init_speak_queue() {
   let handle = {
@@ -313,6 +315,7 @@ pub(crate) fn init_play_queue() {
 }
 
 pub(crate) fn init_queues() {
+  SHUTTING_DOWN.store(false, Ordering::Release);
   init_speak_queue();
   init_predict_queue();
   init_play_queue();
@@ -325,6 +328,7 @@ pub(crate) fn stop_async_tasks() -> Result<
   >,
 > {
   debug!("{}", "stopping async tasks");
+  SHUTTING_DOWN.store(true, Ordering::Release);
 
   // 同期再生ステートをクリア
   match SYNC_STATE.lock() {
@@ -425,6 +429,8 @@ pub(crate) fn stop_async_tasks() -> Result<
     }
     Err(e) => error!("Failed to lock SYNC_THREAD_HANDLES during shutdown: {}", e),
   }
+
+  crate::system::cleanup_system_cache();
 
   debug!("{}", "stopped async tasks");
   Ok(())

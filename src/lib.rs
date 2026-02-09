@@ -136,6 +136,8 @@ pub extern "cdecl" fn load(h: HGLOBAL, len: c_long) -> BOOL {
 }
 
 fn common_load_process(dll_path: &str) -> Result<(), ()> {
+  VEH_EXCEPTION_COUNT.store(0, Ordering::Relaxed);
+
   // Windows(UTF-16)を想定しPathBufでパスを作成
   let log_path = PathBuf::from(dll_path).join("ghost-speaker.log");
   println!("log_path: {:?}", log_path);

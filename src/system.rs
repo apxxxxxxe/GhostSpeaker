@@ -1,8 +1,10 @@
 use crate::engine::Engine;
+use crate::queue::SHUTTING_DOWN;
 use crate::variables::*;
 use once_cell::sync::Lazy;
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::Ordering;
 use std::sync::Mutex as StdMutex;
 use sysinfo::{Pid, ProcessExt, System, SystemExt};
 
@@ -23,6 +25,12 @@ pub(crate) async fn get_port_opener_path(port: String) -> Option<String> {
 fn get_port_opener_path_sync(port: &str) -> Option<String> {
   use std::os::windows::process::CommandExt;
 
+  // チェックポイント1: ロック取得前（高速パス）
+  if SHUTTING_DOWN.load(Ordering::Acquire) {
+    debug!("shutting down, skipping port check for {}", port);
+    return None;
+  }
+
   let mut guard = match PORT_OPENER_MUTEX.lock() {
     Ok(g) => g,
     Err(e) => {
@@ -30,6 +38,12 @@ fn get_port_opener_path_sync(port: &str) -> Option<String> {
       return None;
     }
   };
+
+  // チェックポイント2: ロック取得後、netstat実行前（待機後の再確認）
+  if SHUTTING_DOWN.load(Ordering::Acquire) {
+    debug!("shutting down after lock acquired, skipping port check for {}", port);
+    return None;
+  }
 
   let output = match Command::new("cmd")
     .args(["/C", &format!("netstat -ano | findstr LISTENING | findstr {}", port)])
@@ -53,6 +67,12 @@ fn get_port_opener_path_sync(port: &str) -> Option<String> {
     };
     debug!("netstat found listening process on port {}, querying process info", port);
     log::logger().flush();
+
+    // チェックポイント3: refresh_processes()呼び出し直前（クラッシュサイト防御）
+    if SHUTTING_DOWN.load(Ordering::Acquire) {
+      debug!("shutting down before refresh_processes, skipping port check for {}", port);
+      return None;
+    }
 
     // sysinfo呼び出しをcatch_unwindで保護 + Systemインスタンスをキャッシュ
     let system = guard.get_or_insert_with(|| {
@@ -101,6 +121,18 @@ fn get_port_opener_path_sync(port: &str) -> Option<String> {
   }
   log::logger().flush();
   None
+}
+
+pub(crate) fn cleanup_system_cache() {
+  match PORT_OPENER_MUTEX.lock() {
+    Ok(mut guard) => {
+      *guard = None;
+      debug!("System cache cleaned up");
+    }
+    Err(e) => {
+      error!("Failed to lock PORT_OPENER_MUTEX for cleanup: {}", e);
+    }
+  }
 }
 
 // check the file exists on "C:\Windows\*"
