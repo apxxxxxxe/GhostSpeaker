@@ -17,9 +17,7 @@ const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const QUEUE_POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
-use tokio::sync::Mutex;
 
 pub(crate) static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
   Lazy::new(|| StdMutex::new(Vec::new()));
@@ -27,7 +25,7 @@ pub(crate) static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
 pub(crate) static RUNTIME: Lazy<StdMutex<Option<tokio::runtime::Runtime>>> =
   Lazy::new(|| {
     match tokio::runtime::Builder::new_multi_thread()
-      .worker_threads(2)
+      .worker_threads(1)
       .max_blocking_threads(2)
       .enable_all()
       .build()
@@ -50,17 +48,17 @@ pub(crate) fn get_runtime_handle() -> Option<tokio::runtime::Handle> {
   }
 }
 
-pub(crate) static SPEAK_HANDLERS: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
-  Lazy::new(|| Mutex::new(None));
-pub(crate) static PREDICT_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
-  Lazy::new(|| Mutex::new(None));
-pub(crate) static PREDICT_QUEUE: Lazy<Arc<Mutex<VecDeque<(String, String)>>>> =
-  Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
+pub(crate) static SPEAK_HANDLERS: Lazy<StdMutex<Option<tokio::task::JoinHandle<()>>>> =
+  Lazy::new(|| StdMutex::new(None));
+pub(crate) static PREDICT_HANDLER: Lazy<StdMutex<Option<tokio::task::JoinHandle<()>>>> =
+  Lazy::new(|| StdMutex::new(None));
+pub(crate) static PREDICT_QUEUE: Lazy<StdMutex<VecDeque<(String, String)>>> =
+  Lazy::new(|| StdMutex::new(VecDeque::new()));
 pub(crate) static PREDICT_STOPPER: AtomicBool = AtomicBool::new(false);
-pub(crate) static PLAY_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
-  Lazy::new(|| Mutex::new(None));
-pub(crate) static PLAY_QUEUE: Lazy<Arc<Mutex<VecDeque<Vec<u8>>>>> =
-  Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
+pub(crate) static PLAY_HANDLER: Lazy<StdMutex<Option<tokio::task::JoinHandle<()>>>> =
+  Lazy::new(|| StdMutex::new(None));
+pub(crate) static PLAY_QUEUE: Lazy<StdMutex<VecDeque<Vec<u8>>>> =
+  Lazy::new(|| StdMutex::new(VecDeque::new()));
 pub(crate) static PLAY_STOPPER: AtomicBool = AtomicBool::new(false);
 pub(crate) static SPEAK_QUEUE_STOPPER: AtomicBool = AtomicBool::new(false);
 
@@ -183,14 +181,13 @@ fn init_speak_queue() {
       }
     }
   });
-  handle.block_on(async {
-    *SPEAK_HANDLERS.lock().await = Some(handler);
-  });
+  match SPEAK_HANDLERS.lock() {
+    Ok(mut guard) => *guard = Some(handler),
+    Err(e) => error!("Failed to lock SPEAK_HANDLERS: {}", e),
+  }
 }
 
 fn init_predict_queue() {
-  let predict_queue_cln = PREDICT_QUEUE.clone();
-
   let Some(handle) = get_runtime_handle() else {
     error!("Runtime is not available for predict queue");
     return;
@@ -202,7 +199,11 @@ fn init_predict_queue() {
 
     loop {
       {
-        if predict_queue_cln.lock().await.is_empty() {
+        let is_empty = PREDICT_QUEUE
+          .lock()
+          .unwrap_or_else(|e| e.into_inner())
+          .is_empty();
+        if is_empty {
           if PREDICT_STOPPER.load(Ordering::Acquire) {
             break;
           }
@@ -218,11 +219,10 @@ fn init_predict_queue() {
         }
       }
 
-      let parg;
-      {
-        let mut guard = predict_queue_cln.lock().await;
-        parg = guard.pop_front();
-      }
+      let parg = PREDICT_QUEUE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .pop_front();
 
       match parg {
         None => continue,
@@ -239,7 +239,10 @@ fn init_predict_queue() {
                 match wav_result {
                   Ok(res) => {
                     debug!("pushing to play");
-                    PLAY_QUEUE.lock().await.push_back(res);
+                    PLAY_QUEUE
+                      .lock()
+                      .unwrap_or_else(|e| e.into_inner())
+                      .push_back(res);
                     debug!("pushed to play");
                   }
                   Err(e) => {
@@ -253,14 +256,13 @@ fn init_predict_queue() {
       }
     }
   });
-  handle.block_on(async {
-    *PREDICT_HANDLER.lock().await = Some(handler);
-  });
+  match PREDICT_HANDLER.lock() {
+    Ok(mut guard) => *guard = Some(handler),
+    Err(e) => error!("Failed to lock PREDICT_HANDLER: {}", e),
+  }
 }
 
 pub(crate) fn init_play_queue() {
-  let play_queue_cln = PLAY_QUEUE.clone();
-
   let Some(handle) = get_runtime_handle() else {
     error!("Runtime is not available for play queue");
     return;
@@ -272,7 +274,11 @@ pub(crate) fn init_play_queue() {
 
     loop {
       {
-        if play_queue_cln.lock().await.is_empty() {
+        let is_empty = PLAY_QUEUE
+          .lock()
+          .unwrap_or_else(|e| e.into_inner())
+          .is_empty();
+        if is_empty {
           if PLAY_STOPPER.load(Ordering::Acquire) {
             break;
           }
@@ -288,18 +294,19 @@ pub(crate) fn init_play_queue() {
         }
       }
 
-      let wav;
-      {
-        let mut guard = play_queue_cln.lock().await;
-        wav = guard.pop_front();
-      }
+      let wav = PLAY_QUEUE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .pop_front();
       if let Some(data) = wav {
         if !data.is_empty() {
           last_activity = Instant::now(); // アクティビティ更新
           debug!("{}", format!("play: {}", data.len()));
           match tokio::task::spawn_blocking(move || {
             play_wav(data).map_err(|e| e.to_string())
-          }).await {
+          })
+          .await
+          {
             Ok(Ok(())) => {}
             Ok(Err(e)) => error!("play_wav failed: {}", e),
             Err(e) => error!("play_wav spawn_blocking failed: {}", e),
@@ -308,9 +315,10 @@ pub(crate) fn init_play_queue() {
       }
     }
   });
-  handle.block_on(async {
-    *PLAY_HANDLER.lock().await = Some(handler);
-  });
+  match PLAY_HANDLER.lock() {
+    Ok(mut guard) => *guard = Some(handler),
+    Err(e) => error!("Failed to lock PLAY_HANDLER: {}", e),
+  }
 }
 
 pub(crate) fn init_queues() {
@@ -319,6 +327,15 @@ pub(crate) fn init_queues() {
   PLAY_STOPPER.store(false, Ordering::Release);
   SPEAK_QUEUE_STOPPER.store(false, Ordering::Release);
   crate::player::FORCE_STOP_SINK.store(false, Ordering::Release);
+
+  // 同期世代カウンタをリセット（DLLがメモリに残ったままunload→loadされた場合の不整合防止）
+  SYNC_AUDIO_GENERATION.store(0, Ordering::Release);
+  SYNC_AUDIO_DONE_GEN.store(0, Ordering::Release);
+  // 同期スレッドハンドルをクリア
+  if let Ok(mut handles) = SYNC_THREAD_HANDLES.lock() {
+    handles.clear();
+  }
+
   init_speak_queue();
   init_predict_queue();
   init_play_queue();
@@ -343,32 +360,41 @@ pub(crate) fn stop_async_tasks() -> Result<
   crate::player::FORCE_STOP_SINK.store(true, Ordering::Release);
   debug!("{}", "set force stop sink flag");
   
-  // ランタイムハンドルを取得（take()前に）
-  let handle = get_runtime_handle();
+  // ランタイムの存在を確認
+  let runtime_available = get_runtime_handle().is_some();
 
-  if let Some(handle) = &handle {
+  if runtime_available {
     // 全停止フラグを設定（協調的停止の開始）
     PLAY_STOPPER.store(true, Ordering::Release);
     PREDICT_STOPPER.store(true, Ordering::Release);
     SPEAK_QUEUE_STOPPER.store(true, Ordering::Release);
     debug!("{}", "set all stop flags");
     
-    // 協調的停止を待機（abort()は使用しない）
+    // 協調的停止を待機
     let start_time = Instant::now();
     while start_time.elapsed() < GRACEFUL_SHUTDOWN_TIMEOUT {
       // 全タスクの完了状況を確認
-      let (play_stopped, predict_stopped, speak_stopped) = handle.block_on(async {
-        let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-        let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-        let speak_stopped = SPEAK_HANDLERS.lock().await.as_ref().map_or(true, |h| h.is_finished());
-        (play_stopped, predict_stopped, speak_stopped)
-      });
-      
+      let play_stopped = PLAY_HANDLER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_none_or(|h| h.is_finished());
+      let predict_stopped = PREDICT_HANDLER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_none_or(|h| h.is_finished());
+      let speak_stopped = SPEAK_HANDLERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_none_or(|h| h.is_finished());
+
       if play_stopped && predict_stopped && speak_stopped {
         debug!("{}", "all tasks stopped gracefully");
         break;
       }
-      
+
       // 進行状況をログ出力
       if !play_stopped {
         debug!("{}", "waiting for play handler to finish");
@@ -379,20 +405,37 @@ pub(crate) fn stop_async_tasks() -> Result<
       if !speak_stopped {
         debug!("{}", "waiting for speak handler to finish");
       }
-      
+
       std::thread::sleep(Duration::from_millis(200));
     }
-    
-    // タイムアウト時もabortはせず、警告のみ
+
+    // タイムアウト時: abort + take で確実にタスクを消滅させる
     if start_time.elapsed() >= GRACEFUL_SHUTDOWN_TIMEOUT {
-      warn!("Some tasks did not stop within timeout, proceeding with shutdown");
-      let (play_stopped, predict_stopped, speak_stopped) = handle.block_on(async {
-        let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-        let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-        let speak_stopped = SPEAK_HANDLERS.lock().await.as_ref().map_or(true, |h| h.is_finished());
-        (play_stopped, predict_stopped, speak_stopped)
-      });
-      warn!("Task status - play: {}, predict: {}, speak: {}", play_stopped, predict_stopped, speak_stopped);
+      warn!("Some tasks did not stop within timeout, aborting remaining tasks");
+      if let Ok(mut h) = PLAY_HANDLER.lock() {
+        if let Some(handle) = h.take() {
+          if !handle.is_finished() {
+            handle.abort();
+            warn!("Aborted play handler");
+          }
+        }
+      }
+      if let Ok(mut h) = PREDICT_HANDLER.lock() {
+        if let Some(handle) = h.take() {
+          if !handle.is_finished() {
+            handle.abort();
+            warn!("Aborted predict handler");
+          }
+        }
+      }
+      if let Ok(mut h) = SPEAK_HANDLERS.lock() {
+        if let Some(handle) = h.take() {
+          if !handle.is_finished() {
+            handle.abort();
+            warn!("Aborted speak handler");
+          }
+        }
+      }
     }
   } else {
     warn!("Runtime was not initialized, skipping graceful shutdown");
@@ -444,14 +487,11 @@ pub(crate) fn shutdown_runtime() -> Result<
 }
 
 pub(crate) fn push_to_prediction(text: String, ghost_name: String) {
-  let Some(handle) = get_runtime_handle() else {
-    error!("Runtime is not available for push_to_prediction");
-    return;
-  };
-  handle.block_on(async {
-    // 処理が重いので、別スレッドに投げてそっちでPredictorを作る
-    PREDICT_QUEUE.lock().await.push_back((text, ghost_name));
-  });
+  // StdMutexなのでランタイムハンドル不要
+  PREDICT_QUEUE
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .push_back((text, ghost_name));
 }
 
 async fn args_to_predictors(
