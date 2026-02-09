@@ -1,16 +1,15 @@
 use crate::variables::VOLUME;
 use log::error;
-use once_cell::sync::Lazy;
 use rodio::{Decoder, OutputStream, Sink};
 use std::io::BufReader;
 use std::io::Cursor;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 // 音声再生の最大時間（60秒）
 const MAX_AUDIO_PLAY_TIME: Duration = Duration::from_secs(60);
 
-pub(crate) static FORCE_STOP_SINK: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+pub(crate) static FORCE_STOP_SINK: AtomicBool = AtomicBool::new(false);
 
 pub(crate) fn play_wav(wav: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
   let (_stream, handle) = OutputStream::try_default()?;
@@ -47,21 +46,11 @@ pub(crate) fn play_wav(wav: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
       sink.stop();
       return Ok(());
     }
-    {
-      match FORCE_STOP_SINK.lock() {
-        Ok(mut force_stop) => {
-          if *force_stop {
-            sink.pause();
-            sink.stop();
-            *force_stop = false;
-            return Ok(());
-          }
-        }
-        Err(e) => {
-          error!("Failed to lock FORCE_STOP_SINK: {}", e);
-          // 強制停止の確認ができない場合は継続
-        }
-      }
+    if FORCE_STOP_SINK.load(Ordering::Acquire) {
+      sink.pause();
+      sink.stop();
+      FORCE_STOP_SINK.store(false, Ordering::Release);
+      return Ok(());
     }
   }
   Ok(())

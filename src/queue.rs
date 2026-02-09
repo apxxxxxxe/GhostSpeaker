@@ -39,40 +39,37 @@ pub(crate) static RUNTIME: Lazy<StdMutex<Option<tokio::runtime::Runtime>>> =
       }
     }
   });
+/// RUNTIMEからtokioハンドルを安全に取得する
+pub(crate) fn get_runtime_handle() -> Option<tokio::runtime::Handle> {
+  match RUNTIME.lock() {
+    Ok(guard) => guard.as_ref().map(|rt| rt.handle().clone()),
+    Err(e) => {
+      error!("Failed to lock runtime: {}", e);
+      None
+    }
+  }
+}
+
 pub(crate) static SPEAK_HANDLERS: Lazy<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| Mutex::new(Vec::new()));
 pub(crate) static PREDICT_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| Mutex::new(None));
 pub(crate) static PREDICT_QUEUE: Lazy<Arc<Mutex<VecDeque<(String, String)>>>> =
   Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
-pub(crate) static PREDICT_STOPPER: Lazy<Arc<Mutex<bool>>> =
-  Lazy::new(|| Arc::new(Mutex::new(false)));
+pub(crate) static PREDICT_STOPPER: AtomicBool = AtomicBool::new(false);
 pub(crate) static PLAY_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| Mutex::new(None));
 pub(crate) static PLAY_QUEUE: Lazy<Arc<Mutex<VecDeque<Vec<u8>>>>> =
   Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
-pub(crate) static PLAY_STOPPER: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
-pub(crate) static SPEAK_QUEUE_STOPPER: Lazy<Arc<Mutex<bool>>> =
-  Lazy::new(|| Arc::new(Mutex::new(false)));
+pub(crate) static PLAY_STOPPER: AtomicBool = AtomicBool::new(false);
+pub(crate) static SPEAK_QUEUE_STOPPER: AtomicBool = AtomicBool::new(false);
 
 pub(crate) static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
 fn init_speak_queue() {
-  let handle = {
-    let guard = match RUNTIME.lock() {
-      Ok(g) => g,
-      Err(e) => {
-        error!("Failed to lock runtime: {}", e);
-        return;
-      }
-    };
-    match guard.as_ref() {
-      Some(rt) => rt.handle().clone(),
-      None => {
-        error!("Runtime is not initialized");
-        return;
-      }
-    }
+  let Some(handle) = get_runtime_handle() else {
+    error!("Runtime is not available for speak queue");
+    return;
   };
 
   let mut speak_handlers = Vec::new();
@@ -84,7 +81,7 @@ fn init_speak_queue() {
 
       loop {
         // 停止チェック
-        if *SPEAK_QUEUE_STOPPER.lock().await {
+        if SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
           debug!("Speak queue stopping for engine: {}", engine.name());
           break;
         }
@@ -92,16 +89,15 @@ fn init_speak_queue() {
           match getter.get_speakers_info().await {
             Ok(speakers_info) => {
               consecutive_failures = 0; // 成功時はリセット
-              let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
-              if connection_status.get(&engine).is_none()
-                || connection_status.get(&engine).is_some_and(|v| !*v)
-              {
-                {
-                  if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
-                    dialogs.push(format!("{} が接続されました", engine.name()));
-                  } else {
-                    error!("Failed to lock CONNECTION_DIALOGS for connection message");
-                  }
+              let was_disconnected = {
+                let cs = CURRENT_CONNECTION_STATUS.read().unwrap_or_else(|e| e.into_inner());
+                cs.get(&engine).is_none() || cs.get(&engine).is_some_and(|v| !*v)
+              };
+              if was_disconnected {
+                if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
+                  dialogs.push(format!("{} が接続されました", engine.name()));
+                } else {
+                  error!("Failed to lock CONNECTION_DIALOGS for connection message");
                 }
                 // 接続時、ポートを開いているプロセスのパスを記録
                 if let Ok(mut engine_path) = ENGINE_PATH.write() {
@@ -109,13 +105,24 @@ fn init_speak_queue() {
                 } else {
                   error!("Failed to lock ENGINE_PATH for engine: {}", engine.name());
                 }
-                let mut auto_start = ENGINE_AUTO_START.write().await;
-                if auto_start.get(&engine).is_none() {
-                  auto_start.insert(engine, false);
+                if let Ok(mut auto_start) = ENGINE_AUTO_START.write() {
+                  if auto_start.get(&engine).is_none() {
+                    auto_start.insert(engine, false);
+                  }
+                } else {
+                  error!("Failed to lock ENGINE_AUTO_START for engine: {}", engine.name());
                 }
               }
-              connection_status.insert(engine, true);
-              SPEAKERS_INFO.write().await.insert(engine, speakers_info);
+              if let Ok(mut cs) = CURRENT_CONNECTION_STATUS.write() {
+                cs.insert(engine, true);
+              } else {
+                error!("Failed to lock CURRENT_CONNECTION_STATUS for engine: {}", engine.name());
+              }
+              if let Ok(mut si) = SPEAKERS_INFO.write() {
+                si.insert(engine, speakers_info);
+              } else {
+                error!("Failed to lock SPEAKERS_INFO for engine: {}", engine.name());
+              }
             }
             Err(e) => {
               consecutive_failures += 1;
@@ -134,22 +141,35 @@ fn init_speak_queue() {
                 tokio::time::sleep(Duration::from_secs(backoff_time)).await;
               }
 
-              let mut connection_status = CURRENT_CONNECTION_STATUS.write().await;
-              if connection_status.get(&engine).is_some_and(|v| *v) {
-                if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
-                  dialogs.push(format!("{} が切断されました", engine.name()));
-                } else {
-                  error!("Failed to lock CONNECTION_DIALOGS for disconnection message");
+              {
+                let was_connected = {
+                  let cs = CURRENT_CONNECTION_STATUS.read().unwrap_or_else(|e| e.into_inner());
+                  cs.get(&engine).is_some_and(|v| *v)
+                };
+                if was_connected {
+                  if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
+                    dialogs.push(format!("{} が切断されました", engine.name()));
+                  } else {
+                    error!("Failed to lock CONNECTION_DIALOGS for disconnection message");
+                  }
                 }
               }
-              connection_status.insert(engine, false);
-              SPEAKERS_INFO.write().await.remove(&engine);
+              if let Ok(mut cs) = CURRENT_CONNECTION_STATUS.write() {
+                cs.insert(engine, false);
+              } else {
+                error!("Failed to lock CURRENT_CONNECTION_STATUS for disconnect");
+              }
+              if let Ok(mut si) = SPEAKERS_INFO.write() {
+                si.remove(&engine);
+              } else {
+                error!("Failed to lock SPEAKERS_INFO for disconnect");
+              }
             }
           }
         }
         // 1秒のスリープを100ms x 10に分割して応答性を向上
         for _ in 0..10 {
-          if *SPEAK_QUEUE_STOPPER.lock().await {
+          if SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
             break;
           }
           tokio::time::sleep(Duration::from_millis(100)).await;
@@ -165,23 +185,10 @@ fn init_speak_queue() {
 
 fn init_predict_queue() {
   let predict_queue_cln = PREDICT_QUEUE.clone();
-  let predict_stopper_cln = PREDICT_STOPPER.clone();
 
-  let handle = {
-    let guard = match RUNTIME.lock() {
-      Ok(g) => g,
-      Err(e) => {
-        error!("Failed to lock runtime for predict queue: {}", e);
-        return;
-      }
-    };
-    match guard.as_ref() {
-      Some(rt) => rt.handle().clone(),
-      None => {
-        error!("Runtime is not initialized for predict queue");
-        return;
-      }
-    }
+  let Some(handle) = get_runtime_handle() else {
+    error!("Runtime is not available for predict queue");
+    return;
   };
 
   let handler = handle.spawn(async move {
@@ -191,7 +198,7 @@ fn init_predict_queue() {
     loop {
       {
         if predict_queue_cln.lock().await.is_empty() {
-          if *predict_stopper_cln.lock().await {
+          if PREDICT_STOPPER.load(Ordering::Acquire) {
             break;
           }
 
@@ -248,23 +255,10 @@ fn init_predict_queue() {
 
 pub(crate) fn init_play_queue() {
   let play_queue_cln = PLAY_QUEUE.clone();
-  let play_stopper_cln = PLAY_STOPPER.clone();
 
-  let handle = {
-    let guard = match RUNTIME.lock() {
-      Ok(g) => g,
-      Err(e) => {
-        error!("Failed to lock runtime for play queue: {}", e);
-        return;
-      }
-    };
-    match guard.as_ref() {
-      Some(rt) => rt.handle().clone(),
-      None => {
-        error!("Runtime is not initialized for play queue");
-        return;
-      }
-    }
+  let Some(handle) = get_runtime_handle() else {
+    error!("Runtime is not available for play queue");
+    return;
   };
 
   let handler = handle.spawn(async move {
@@ -274,7 +268,7 @@ pub(crate) fn init_play_queue() {
     loop {
       {
         if play_queue_cln.lock().await.is_empty() {
-          if *play_stopper_cln.lock().await {
+          if PLAY_STOPPER.load(Ordering::Acquire) {
             break;
           }
 
@@ -316,6 +310,10 @@ pub(crate) fn init_play_queue() {
 
 pub(crate) fn init_queues() {
   SHUTTING_DOWN.store(false, Ordering::Release);
+  PREDICT_STOPPER.store(false, Ordering::Release);
+  PLAY_STOPPER.store(false, Ordering::Release);
+  SPEAK_QUEUE_STOPPER.store(false, Ordering::Release);
+  crate::player::FORCE_STOP_SINK.store(false, Ordering::Release);
   init_speak_queue();
   init_predict_queue();
   init_play_queue();
@@ -337,27 +335,18 @@ pub(crate) fn stop_async_tasks() -> Result<
   }
   
   // 音声再生を即座に強制停止
-  if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
-    *force_stop = true;
-    debug!("{}", "set force stop sink flag");
-  } else {
-    error!("Failed to set FORCE_STOP_SINK flag");
-  }
+  crate::player::FORCE_STOP_SINK.store(true, Ordering::Release);
+  debug!("{}", "set force stop sink flag");
   
   // ランタイムハンドルを取得（take()前に）
-  let handle = {
-    let guard = RUNTIME.lock()?;
-    guard.as_ref().map(|rt| rt.handle().clone())
-  };
+  let handle = get_runtime_handle();
 
   if let Some(handle) = &handle {
     // 全停止フラグを設定（協調的停止の開始）
-    handle.block_on(async {
-      *PLAY_STOPPER.lock().await = true;
-      *PREDICT_STOPPER.lock().await = true;
-      *SPEAK_QUEUE_STOPPER.lock().await = true;
-      debug!("{}", "set all stop flags");
-    });
+    PLAY_STOPPER.store(true, Ordering::Release);
+    PREDICT_STOPPER.store(true, Ordering::Release);
+    SPEAK_QUEUE_STOPPER.store(true, Ordering::Release);
+    debug!("{}", "set all stop flags");
     
     // 協調的停止を待機（abort()は使用しない）
     let start_time = Instant::now();
@@ -450,21 +439,9 @@ pub(crate) fn shutdown_runtime() -> Result<
 }
 
 pub(crate) fn push_to_prediction(text: String, ghost_name: String) {
-  let handle = {
-    let guard = match RUNTIME.lock() {
-      Ok(g) => g,
-      Err(e) => {
-        error!("Failed to lock RUNTIME in push_to_prediction: {}", e);
-        return;
-      }
-    };
-    match guard.as_ref() {
-      Some(rt) => rt.handle().clone(),
-      None => {
-        error!("Runtime is not initialized in push_to_prediction");
-        return;
-      }
-    }
+  let Some(handle) = get_runtime_handle() else {
+    error!("Runtime is not available for push_to_prediction");
+    return;
   };
   handle.block_on(async {
     // 処理が重いので、別スレッドに投げてそっちでPredictorを作る
@@ -499,14 +476,17 @@ async fn build_segments_async(
 ) -> Option<Vec<SyncSegment>> {
   let mut segments: Vec<SyncSegment> = Vec::new();
   let connected_engines = {
-    CURRENT_CONNECTION_STATUS
-      .read()
-      .await
-      .clone()
-      .iter()
-      .filter(|(_, v)| **v)
-      .map(|(k, _)| *k)
-      .collect::<Vec<_>>()
+    match CURRENT_CONNECTION_STATUS.read() {
+      Ok(cs) => cs
+        .iter()
+        .filter(|(_, v)| **v)
+        .map(|(k, _)| *k)
+        .collect::<Vec<_>>(),
+      Err(e) => {
+        error!("Failed to read CURRENT_CONNECTION_STATUS: {}", e);
+        return None;
+      }
+    }
   };
   if connected_engines.is_empty() {
     debug!("no engine connected: skip: {}", text);
@@ -576,16 +556,20 @@ async fn build_segments_async(
         Some(e) => e,
         None => continue,
       };
-      if let Some(speakers_by_engine) = &SPEAKERS_INFO
-        .read()
-        .await
-        .get(&engine)
-      {
-        !speakers_by_engine
-          .iter()
-          .any(|s| s.speaker_uuid == speaker.speaker_uuid)
-      } else {
-        false
+      match SPEAKERS_INFO.read() {
+        Ok(si) => {
+          if let Some(speakers_by_engine) = si.get(&engine) {
+            !speakers_by_engine
+              .iter()
+              .any(|s| s.speaker_uuid == speaker.speaker_uuid)
+          } else {
+            false
+          }
+        }
+        Err(e) => {
+          error!("Failed to read SPEAKERS_INFO: {}", e);
+          false
+        }
       }
     };
     if voice_not_found {
@@ -649,16 +633,7 @@ pub(crate) fn build_segments(
   ghost_name: String,
   sync_mode: bool,
 ) -> Option<Vec<SyncSegment>> {
-  let handle = {
-    let guard = match RUNTIME.lock() {
-      Ok(g) => g,
-      Err(e) => {
-        error!("Failed to lock RUNTIME: {}", e);
-        return None;
-      }
-    };
-    guard.as_ref()?.handle().clone()
-  };
+  let handle = get_runtime_handle()?;
   handle.block_on(build_segments_async(text, ghost_name, sync_mode))
 }
 
@@ -702,16 +677,7 @@ pub(crate) fn sync_predict(
   if SHUTTING_DOWN.load(Ordering::Acquire) {
     return Err("shutting down".into());
   }
-  let handle = {
-    let guard = RUNTIME
-      .lock()
-      .map_err(|e| format!("RUNTIME lock poisoned: {}", e))?;
-    guard
-      .as_ref()
-      .ok_or("Runtime not initialized")?
-      .handle()
-      .clone()
-  };
+  let handle = get_runtime_handle().ok_or("Runtime not available")?;
   handle.block_on(async {
     tokio::select! {
       result = tokio::time::timeout(Duration::from_secs(30), predictor.predict()) => {
@@ -736,9 +702,7 @@ pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
     }
   }
   // cancel_sync_playback で設定された FORCE_STOP_SINK をリセット
-  if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
-    *force_stop = false;
-  }
+  crate::player::FORCE_STOP_SINK.store(false, Ordering::Release);
   let handle = std::thread::spawn(move || {
     if !wav.is_empty() {
       let _ = play_wav(wav);
@@ -774,9 +738,7 @@ pub(crate) fn cancel_sync_playback() {
     Ok(mut s) => *s = None,
     Err(e) => error!("Failed to lock SYNC_STATE in cancel: {}", e),
   }
-  if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
-    *force_stop = true;
-  }
+  crate::player::FORCE_STOP_SINK.store(true, Ordering::Release);
 }
 
 /// 同期モード用: 全セグメントをバックグラウンドで順次合成し、プールに蓄積する

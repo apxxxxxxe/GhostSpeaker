@@ -12,7 +12,7 @@ mod system;
 mod variables;
 
 use crate::plugin::request::PluginRequest;
-use crate::queue::{init_queues, shutdown_runtime, stop_async_tasks, RUNTIME};
+use crate::queue::{init_queues, shutdown_runtime, stop_async_tasks};
 use crate::system::boot_engine;
 use crate::variables::rawvariables::copy_from_raw;
 use crate::variables::rawvariables::save_variables;
@@ -185,20 +185,11 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
   // 自動起動が設定されているエンジンを起動
   debug!("checking engine auto-start");
   log::logger().flush();
-  let engine_auto_start = {
-    let guard = match RUNTIME.lock() {
-      Ok(g) => g,
-      Err(e) => {
-        error!("Failed to lock RUNTIME: {}", e);
-        return Err(());
-      }
-    };
-    match guard.as_ref() {
-      Some(rt) => rt.handle().block_on(async { ENGINE_AUTO_START.read().await.clone() }),
-      None => {
-        error!("Runtime is not initialized");
-        return Err(());
-      }
+  let engine_auto_start = match ENGINE_AUTO_START.read() {
+    Ok(eas) => eas.clone(),
+    Err(e) => {
+      error!("Failed to read ENGINE_AUTO_START: {}", e);
+      return Err(());
     }
   };
   {

@@ -26,23 +26,9 @@ pub(crate) fn copy_from_raw(raw: &RawGlobalVariables) {
     }
   }
   if let Some(a) = raw.engine_auto_start.clone() {
-    let handle = match crate::queue::RUNTIME.lock() {
-      Ok(g) => match g.as_ref() {
-        Some(rt) => Some(rt.handle().clone()),
-        None => {
-          error!("Runtime is not initialized in copy_from_raw");
-          None
-        }
-      },
-      Err(e) => {
-        error!("Failed to lock RUNTIME in copy_from_raw: {}", e);
-        None
-      }
-    };
-    if let Some(h) = handle {
-      h.block_on(async {
-        *ENGINE_AUTO_START.write().await = a;
-      });
+    match ENGINE_AUTO_START.write() {
+      Ok(mut engine_auto_start) => *engine_auto_start = a,
+      Err(e) => error!("Failed to write ENGINE_AUTO_START: {}", e),
     }
   }
   if let Some(v) = raw.volume {
@@ -77,19 +63,10 @@ pub(crate) fn copy_from_raw(raw: &RawGlobalVariables) {
 
 pub(crate) fn save_variables() -> Result<(), Box<dyn std::error::Error>> {
   // RawGlobalVariablesに変換
-  let engine_auto_start = {
-    let handle = {
-      let guard = crate::queue::RUNTIME
-        .lock()
-        .map_err(|e| format!("RUNTIME lock poisoned: {}", e))?;
-      guard
-        .as_ref()
-        .ok_or("Runtime not initialized")?
-        .handle()
-        .clone()
-    };
-    handle.block_on(async { ENGINE_AUTO_START.read().await.clone() })
-  };
+  let engine_auto_start = ENGINE_AUTO_START
+    .read()
+    .map_err(|e| format!("ENGINE_AUTO_START lock poisoned: {}", e))?
+    .clone();
   let raw = RawGlobalVariables {
     engine_path: Some(ENGINE_PATH.read()?.clone()),
     engine_auto_start: Some(engine_auto_start),
