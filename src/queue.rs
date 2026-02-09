@@ -685,10 +685,23 @@ static SYNC_AUDIO_DONE: Lazy<StdMutex<Arc<AtomicBool>>> =
 static SYNC_THREAD_HANDLES: Lazy<StdMutex<Vec<std::thread::JoinHandle<()>>>> =
   Lazy::new(|| StdMutex::new(Vec::new()));
 
+/// シャットダウン待機用ヘルパー: SHUTTING_DOWNフラグを100msごとにポーリング
+async fn wait_for_shutdown() {
+  loop {
+    if SHUTTING_DOWN.load(Ordering::Acquire) {
+      return;
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+  }
+}
+
 /// 同期モード用: Predictor.predict() を同期的に呼び出す
 pub(crate) fn sync_predict(
   predictor: &dyn Predictor,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+  if SHUTTING_DOWN.load(Ordering::Acquire) {
+    return Err("shutting down".into());
+  }
   let handle = {
     let guard = RUNTIME
       .lock()
@@ -700,9 +713,15 @@ pub(crate) fn sync_predict(
       .clone()
   };
   handle.block_on(async {
-    tokio::time::timeout(Duration::from_secs(30), predictor.predict())
-      .await
-      .map_err(|_| -> Box<dyn std::error::Error> { "predict timed out".into() })?
+    tokio::select! {
+      result = tokio::time::timeout(Duration::from_secs(30), predictor.predict()) => {
+        result
+          .map_err(|_| -> Box<dyn std::error::Error> { "predict timed out".into() })?
+      }
+      _ = wait_for_shutdown() => {
+        Err("shutting down".into())
+      }
+    }
   })
 }
 
@@ -779,6 +798,10 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
 
   let handle = std::thread::spawn(move || {
     for segment in segments {
+      // シャットダウンチェック
+      if SHUTTING_DOWN.load(Ordering::Acquire) {
+        return;
+      }
       // キャンセルチェック: SYNC_STATE が None ならば中断
       {
         match SYNC_STATE.lock() {

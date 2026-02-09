@@ -41,6 +41,12 @@ pub(crate) fn play_wav(wav: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     std::thread::sleep(std::time::Duration::from_millis(50));
+    // シャットダウンチェック
+    if crate::queue::SHUTTING_DOWN.load(std::sync::atomic::Ordering::Acquire) {
+      sink.pause();
+      sink.stop();
+      return Ok(());
+    }
     {
       match FORCE_STOP_SINK.lock() {
         Ok(mut force_stop) => {
