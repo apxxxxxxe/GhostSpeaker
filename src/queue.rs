@@ -393,6 +393,32 @@ pub(crate) fn stop_async_tasks() -> Result<
     warn!("Runtime was not initialized, skipping graceful shutdown");
   }
   
+  // 同期スレッドの JoinHandle を回収して join する
+  match SYNC_THREAD_HANDLES.lock() {
+    Ok(mut handles) => {
+      let handles_to_join: Vec<_> = handles.drain(..).collect();
+      drop(handles); // ロック解放してから join
+      let join_start = Instant::now();
+      for h in handles_to_join {
+        let remaining = GRACEFUL_SHUTDOWN_TIMEOUT.saturating_sub(join_start.elapsed());
+        if remaining.is_zero() {
+          warn!("Timeout waiting for sync threads to finish");
+          break;
+        }
+        let poll_start = Instant::now();
+        while !h.is_finished() && poll_start.elapsed() < remaining {
+          std::thread::sleep(Duration::from_millis(50));
+        }
+        if h.is_finished() {
+          let _ = h.join();
+        } else {
+          warn!("Sync thread did not finish within timeout");
+        }
+      }
+    }
+    Err(e) => error!("Failed to lock SYNC_THREAD_HANDLES during shutdown: {}", e),
+  }
+
   debug!("{}", "stopped async tasks");
   Ok(())
 }
@@ -633,6 +659,9 @@ pub(crate) static SYNC_STATE: Lazy<StdMutex<Option<SyncPlaybackState>>> =
 static SYNC_AUDIO_DONE: Lazy<StdMutex<Arc<AtomicBool>>> =
   Lazy::new(|| StdMutex::new(Arc::new(AtomicBool::new(true))));
 
+static SYNC_THREAD_HANDLES: Lazy<StdMutex<Vec<std::thread::JoinHandle<()>>>> =
+  Lazy::new(|| StdMutex::new(Vec::new()));
+
 /// 同期モード用: Predictor.predict() を同期的に呼び出す
 pub(crate) fn sync_predict(
   predictor: &dyn Predictor,
@@ -668,12 +697,22 @@ pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
   if let Ok(mut force_stop) = crate::player::FORCE_STOP_SINK.lock() {
     *force_stop = false;
   }
-  std::thread::spawn(move || {
+  let handle = std::thread::spawn(move || {
     if !wav.is_empty() {
       let _ = play_wav(wav);
     }
     done.store(true, Ordering::SeqCst);
   });
+  match SYNC_THREAD_HANDLES.lock() {
+    Ok(mut handles) => {
+      handles.retain(|h| !h.is_finished());
+      handles.push(handle);
+    }
+    Err(e) => {
+      error!("Failed to lock SYNC_THREAD_HANDLES: {}", e);
+      let _ = handle.join();
+    }
+  }
 }
 
 /// 同期再生の音声が完了したか確認（非ブロッキング）
@@ -715,7 +754,7 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
     }
   }
 
-  std::thread::spawn(move || {
+  let handle = std::thread::spawn(move || {
     for segment in segments {
       // キャンセルチェック: SYNC_STATE が None ならば中断
       {
@@ -767,6 +806,16 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
       Err(e) => error!("Failed to lock SYNC_STATE for completion flag: {}", e),
     }
   });
+  match SYNC_THREAD_HANDLES.lock() {
+    Ok(mut handles) => {
+      handles.retain(|h| !h.is_finished());
+      handles.push(handle);
+    }
+    Err(e) => {
+      error!("Failed to lock SYNC_THREAD_HANDLES: {}", e);
+      let _ = handle.join();
+    }
+  }
 }
 
 /// 同期モード用: プールから合成済みセグメントを取得し、残りがあるかも返す
