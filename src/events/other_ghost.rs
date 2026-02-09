@@ -1,5 +1,5 @@
 use crate::events::common::*;
-use crate::format::scope_to_tag;
+use crate::format::{is_ellipsis_segment, scope_to_tag};
 use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::queue::{
@@ -51,8 +51,12 @@ pub(crate) fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let mut segments = segments;
   let first = segments.remove(0);
 
-  // 最初のセグメント: 合成 → 再生開始
-  let wav = sync_predict(&*first.predictor).unwrap_or_default();
+  // 最初のセグメント: 合成 → 再生開始（省略記号ならスキップ）
+  let wav = if is_ellipsis_segment(&first.text) {
+    Vec::new()
+  } else {
+    sync_predict(&*first.predictor).unwrap_or_default()
+  };
   spawn_sync_playback(wav);
 
   // 残りセグメントのバックグラウンド合成を開始

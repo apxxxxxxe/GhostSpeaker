@@ -1,8 +1,8 @@
 use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
-use crate::engine::{engine_from_port, get_speaker_getters, Engine, Predictor, NO_VOICE_UUID};
-use crate::format::{split_by_punctuation_with_raw, split_dialog};
+use crate::engine::{engine_from_port, get_speaker_getters, Engine, NoOpPredictor, Predictor, NO_VOICE_UUID};
+use crate::format::{is_ellipsis_segment, split_by_punctuation_with_raw, split_dialog};
 use crate::player::play_wav;
 use crate::system::get_port_opener_path;
 use crate::variables::GHOSTS_VOICES;
@@ -473,6 +473,7 @@ async fn args_to_predictors(
   build_segments_async(text, ghost_name, false).await.map(|segments| {
     segments
       .into_iter()
+      .filter(|seg| !is_ellipsis_segment(&seg.text))
       .map(|seg| seg.predictor)
       .collect()
   })
@@ -596,6 +597,15 @@ async fn build_segments_async(
       vec![(dialog.text.clone(), dialog.raw_text.clone())]
     };
     for (t, rt) in pairs {
+      if is_ellipsis_segment(&t) {
+        segments.push(SyncSegment {
+          text: t,
+          raw_text: rt,
+          scope: dialog.scope,
+          predictor: Box::new(NoOpPredictor),
+        });
+        continue;
+      }
       let predictor: Box<dyn Predictor + Send + Sync> = match engine {
         Engine::CoeiroInkV2 => Box::new(CoeiroinkV2Predictor::new(
           t.clone(),
@@ -778,7 +788,11 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
         }
       }
 
-      let wav = sync_predict(&*segment.predictor).unwrap_or_default();
+      let wav = if is_ellipsis_segment(&segment.text) {
+        Vec::new()
+      } else {
+        sync_predict(&*segment.predictor).unwrap_or_default()
+      };
 
       // 合成結果をプールに追加
       {

@@ -58,8 +58,37 @@ pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
   result
 }
 
+
+/// テキストを正規表現で分割し、マッチ部分も独立要素として保持する。
+/// 例: split_keeping_delimiters("あ……い", /[…]+/) => ["あ", "……", "い"]
+fn split_keeping_delimiters(text: &str, re: &Regex) -> Vec<String> {
+  let mut result = Vec::new();
+  let mut last_end = 0;
+  for m in re.find_iter(text) {
+    if m.start() > last_end {
+      result.push(text[last_end..m.start()].to_string());
+    }
+    result.push(m.as_str().to_string());
+    last_end = m.end();
+  }
+  if last_end < text.len() {
+    result.push(text[last_end..].to_string());
+  }
+  result
+}
+
+/// テキストが省略記号のみで構成されているか判定する
+pub(crate) fn is_ellipsis_segment(text: &str) -> bool {
+  if text.is_empty() {
+    return false;
+  }
+  let re = Regex::new(r"^(?:[…]+|・{2,}|\.{2,})$").unwrap();
+  re.is_match(text)
+}
+
 pub(crate) fn split_by_punctuation(src: String) -> Vec<String> {
   let delims_re = Regex::new(r"[！!?？。]").unwrap();
+  let ellipsis_re = Regex::new(r"[…]+|・{2,}|\.{2,}").unwrap();
 
   let t = delims_re.replace_all(&src, "$0\u{0}").to_string();
   let mut result = Vec::new();
@@ -67,7 +96,12 @@ pub(crate) fn split_by_punctuation(src: String) -> Vec<String> {
     if text.is_empty() {
       continue;
     }
-    result.push(text.to_string());
+    // 省略記号で追加分割（省略記号自体を独立セグメントとして保持）
+    for s in split_keeping_delimiters(text, &ellipsis_re) {
+      if !s.is_empty() {
+        result.push(s);
+      }
+    }
   }
   result
 }

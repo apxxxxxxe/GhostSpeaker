@@ -87,6 +87,15 @@ pub(crate) trait Predictor {
   async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>>;
 }
 
+pub(crate) struct NoOpPredictor;
+
+#[async_trait]
+impl Predictor for NoOpPredictor {
+  async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    Ok(Vec::new())
+  }
+}
+
 pub(crate) fn get_speaker_getters() -> HashMap<Engine, Box<dyn SpeakerGetter + Send + Sync>> {
   let mut map = HashMap::new();
   for engine in ENGINE_LIST.iter() {
