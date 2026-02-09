@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ユーザとの対話は日本語で行うこと。
 
+## 気をつけること
+- 本プロジェクトはDLL形式で動作する。メモリ解放、ヒープ管理の安全性に**最新の注意を払う**こと。
+- リファクタリングの際はデグレーションを防ぎつつも、パフォーマンスや安全性のための最適化を**積極的に行う**こと。
+
 ## Project Overview
 
 GhostSpeaker is a Rust-based SHIORI plugin for 伺か (Ukagaka) that enables text-to-speech functionality for ghost characters using various TTS engines. It's built as a Windows DLL (`ghost_speaker.dll`) that integrates with the 伺か ecosystem.

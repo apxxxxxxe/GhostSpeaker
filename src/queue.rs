@@ -16,7 +16,7 @@ const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(8);
 const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const QUEUE_POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
@@ -27,8 +27,8 @@ pub(crate) static CONNECTION_DIALOGS: Lazy<StdMutex<Vec<String>>> =
 pub(crate) static RUNTIME: Lazy<StdMutex<Option<tokio::runtime::Runtime>>> =
   Lazy::new(|| {
     match tokio::runtime::Builder::new_multi_thread()
-      .worker_threads(4)
-      .max_blocking_threads(4)
+      .worker_threads(2)
+      .max_blocking_threads(2)
       .enable_all()
       .build()
     {
@@ -50,8 +50,8 @@ pub(crate) fn get_runtime_handle() -> Option<tokio::runtime::Handle> {
   }
 }
 
-pub(crate) static SPEAK_HANDLERS: Lazy<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
-  Lazy::new(|| Mutex::new(Vec::new()));
+pub(crate) static SPEAK_HANDLERS: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
+  Lazy::new(|| Mutex::new(None));
 pub(crate) static PREDICT_HANDLER: Lazy<Mutex<Option<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| Mutex::new(None));
 pub(crate) static PREDICT_QUEUE: Lazy<Arc<Mutex<VecDeque<(String, String)>>>> =
@@ -72,23 +72,30 @@ fn init_speak_queue() {
     return;
   };
 
-  let mut speak_handlers = Vec::new();
-  for (engine, getter) in get_speaker_getters() {
-    let handler = handle.spawn(async move {
-      let mut consecutive_failures = 0;
-      const MAX_CONSECUTIVE_FAILURES: u32 = 10; // 最大連続失敗回数
-      const BACKOFF_BASE: u64 = 2; // バックオフ基数（秒）
+  let speaker_getters = get_speaker_getters();
+  let handler = handle.spawn(async move {
+    // エンジンごとの連続失敗カウンタ
+    let mut consecutive_failures: HashMap<Engine, u32> = HashMap::new();
+    const MAX_CONSECUTIVE_FAILURES: u32 = 10;
+    const BACKOFF_BASE: u64 = 2;
 
-      loop {
-        // 停止チェック
+    loop {
+      // 停止チェック
+      if SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
+        debug!("Speak queue stopping");
+        break;
+      }
+
+      // 全エンジンを順番にチェック
+      for (engine, getter) in &speaker_getters {
+        let engine = *engine;
         if SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
-          debug!("Speak queue stopping for engine: {}", engine.name());
           break;
         }
         if let Some(port_opener_path) = get_port_opener_path(format!("{}", engine.port())).await {
           match getter.get_speakers_info().await {
             Ok(speakers_info) => {
-              consecutive_failures = 0; // 成功時はリセット
+              consecutive_failures.insert(engine, 0);
               let was_disconnected = {
                 let cs = CURRENT_CONNECTION_STATUS.read().unwrap_or_else(|e| e.into_inner());
                 cs.get(&engine).is_none() || cs.get(&engine).is_some_and(|v| !*v)
@@ -99,7 +106,6 @@ fn init_speak_queue() {
                 } else {
                   error!("Failed to lock CONNECTION_DIALOGS for connection message");
                 }
-                // 接続時、ポートを開いているプロセスのパスを記録
                 if let Ok(mut engine_path) = ENGINE_PATH.write() {
                   engine_path.insert(engine, port_opener_path);
                 } else {
@@ -125,19 +131,19 @@ fn init_speak_queue() {
               }
             }
             Err(e) => {
-              consecutive_failures += 1;
+              let failures = consecutive_failures.entry(engine).or_insert(0);
+              *failures += 1;
               error!(
                 "Error: {} (consecutive failures: {})",
-                e, consecutive_failures
+                e, *failures
               );
 
-              // 最大失敗回数に達した場合の処理
-              if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+              if *failures >= MAX_CONSECUTIVE_FAILURES {
                 error!(
                   "Too many consecutive failures for engine: {}, backing off",
                   engine.name()
                 );
-                let backoff_time = std::cmp::min(BACKOFF_BASE.pow(consecutive_failures / 5), 60); // 最大60秒
+                let backoff_time = std::cmp::min(BACKOFF_BASE.pow(*failures / 5), 60);
                 tokio::time::sleep(Duration::from_secs(backoff_time)).await;
               }
 
@@ -167,19 +173,18 @@ fn init_speak_queue() {
             }
           }
         }
-        // 1秒のスリープを100ms x 10に分割して応答性を向上
-        for _ in 0..10 {
-          if SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
-            break;
-          }
-          tokio::time::sleep(Duration::from_millis(100)).await;
-        }
       }
-    });
-    speak_handlers.push(handler);
-  }
+      // 1秒のスリープを100ms x 10に分割して応答性を向上
+      for _ in 0..10 {
+        if SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
+          break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+      }
+    }
+  });
   handle.block_on(async {
-    *SPEAK_HANDLERS.lock().await = speak_handlers;
+    *SPEAK_HANDLERS.lock().await = Some(handler);
   });
 }
 
@@ -355,7 +360,7 @@ pub(crate) fn stop_async_tasks() -> Result<
       let (play_stopped, predict_stopped, speak_stopped) = handle.block_on(async {
         let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
         let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-        let speak_stopped = SPEAK_HANDLERS.lock().await.iter().all(|h| h.is_finished());
+        let speak_stopped = SPEAK_HANDLERS.lock().await.as_ref().map_or(true, |h| h.is_finished());
         (play_stopped, predict_stopped, speak_stopped)
       });
       
@@ -372,7 +377,7 @@ pub(crate) fn stop_async_tasks() -> Result<
         debug!("{}", "waiting for predict handler to finish");
       }
       if !speak_stopped {
-        debug!("{}", "waiting for speak handlers to finish");
+        debug!("{}", "waiting for speak handler to finish");
       }
       
       std::thread::sleep(Duration::from_millis(200));
@@ -384,7 +389,7 @@ pub(crate) fn stop_async_tasks() -> Result<
       let (play_stopped, predict_stopped, speak_stopped) = handle.block_on(async {
         let play_stopped = PLAY_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
         let predict_stopped = PREDICT_HANDLER.lock().await.as_ref().map_or(true, |h| h.is_finished());
-        let speak_stopped = SPEAK_HANDLERS.lock().await.iter().all(|h| h.is_finished());
+        let speak_stopped = SPEAK_HANDLERS.lock().await.as_ref().map_or(true, |h| h.is_finished());
         (play_stopped, predict_stopped, speak_stopped)
       });
       warn!("Task status - play: {}, predict: {}, speak: {}", play_stopped, predict_stopped, speak_stopped);
@@ -654,8 +659,13 @@ pub(crate) struct SyncPlaybackState {
 pub(crate) static SYNC_STATE: Lazy<StdMutex<Option<SyncPlaybackState>>> =
   Lazy::new(|| StdMutex::new(None));
 
-static SYNC_AUDIO_DONE: Lazy<StdMutex<Arc<AtomicBool>>> =
-  Lazy::new(|| StdMutex::new(Arc::new(AtomicBool::new(true))));
+// 世代カウンタ方式: Mutexを排除しロックフリーに
+// SYNC_AUDIO_GENERATION: 再生開始ごとにインクリメント
+// SYNC_AUDIO_DONE_GEN: スレッド完了時にfetch_maxで更新
+static SYNC_AUDIO_GENERATION: std::sync::atomic::AtomicU64 =
+  std::sync::atomic::AtomicU64::new(0);
+static SYNC_AUDIO_DONE_GEN: std::sync::atomic::AtomicU64 =
+  std::sync::atomic::AtomicU64::new(0);
 
 static SYNC_THREAD_HANDLES: Lazy<StdMutex<Vec<std::thread::JoinHandle<()>>>> =
   Lazy::new(|| StdMutex::new(Vec::new()));
@@ -691,23 +701,15 @@ pub(crate) fn sync_predict(
   })
 }
 
-/// 同期モード用: WAV を別スレッドで再生し、完了時にフラグ設定
 pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
-  let done = Arc::new(AtomicBool::new(false));
-  match SYNC_AUDIO_DONE.lock() {
-    Ok(mut guard) => *guard = done.clone(),
-    Err(e) => {
-      error!("Failed to lock SYNC_AUDIO_DONE: {}", e);
-      return;
-    }
-  }
+  let gen = SYNC_AUDIO_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
   // cancel_sync_playback で設定された FORCE_STOP_SINK をリセット
   crate::player::FORCE_STOP_SINK.store(false, Ordering::Release);
   let handle = std::thread::spawn(move || {
     if !wav.is_empty() {
       let _ = play_wav(wav);
     }
-    done.store(true, Ordering::SeqCst);
+    SYNC_AUDIO_DONE_GEN.fetch_max(gen, Ordering::SeqCst);
   });
   match SYNC_THREAD_HANDLES.lock() {
     Ok(mut handles) => {
@@ -721,15 +723,8 @@ pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
   }
 }
 
-/// 同期再生の音声が完了したか確認（非ブロッキング）
 pub(crate) fn is_sync_audio_done() -> bool {
-  match SYNC_AUDIO_DONE.lock() {
-    Ok(guard) => guard.load(Ordering::SeqCst),
-    Err(e) => {
-      error!("Failed to lock SYNC_AUDIO_DONE: {}", e);
-      true // poison時は完了として扱う
-    }
-  }
+  SYNC_AUDIO_DONE_GEN.load(Ordering::SeqCst) >= SYNC_AUDIO_GENERATION.load(Ordering::SeqCst)
 }
 
 /// 同期再生をキャンセル
