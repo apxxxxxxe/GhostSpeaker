@@ -8,7 +8,7 @@ use sysinfo::{Pid, ProcessExt, System, SystemExt};
 
 use winapi::um::winbase::CREATE_NO_WINDOW;
 
-static PORT_OPENER_MUTEX: Lazy<StdMutex<()>> = Lazy::new(|| StdMutex::new(()));
+static PORT_OPENER_MUTEX: Lazy<StdMutex<Option<System>>> = Lazy::new(|| StdMutex::new(None));
 
 pub(crate) async fn get_port_opener_path(port: String) -> Option<String> {
   match tokio::task::spawn_blocking(move || get_port_opener_path_sync(&port)).await {
@@ -23,7 +23,7 @@ pub(crate) async fn get_port_opener_path(port: String) -> Option<String> {
 fn get_port_opener_path_sync(port: &str) -> Option<String> {
   use std::os::windows::process::CommandExt;
 
-  let _guard = match PORT_OPENER_MUTEX.lock() {
+  let mut guard = match PORT_OPENER_MUTEX.lock() {
     Ok(g) => g,
     Err(e) => {
       error!("Failed to lock PORT_OPENER_MUTEX: {}", e);
@@ -53,15 +53,29 @@ fn get_port_opener_path_sync(port: &str) -> Option<String> {
     };
     debug!("netstat found listening process on port {}, querying process info", port);
     log::logger().flush();
-    let mut system = System::new();
-    system.refresh_processes();
+
+    // sysinfo呼び出しをcatch_unwindで保護 + Systemインスタンスをキャッシュ
+    let system = guard.get_or_insert_with(|| {
+      debug!("Creating new System instance");
+      System::new()
+    });
+    let refresh_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      system.refresh_processes();
+    }));
+    if let Err(e) = refresh_result {
+      error!("sysinfo refresh_processes panicked: {:?}", e);
+      // パニック後のSystemは不定状態なので破棄
+      *guard = None;
+      return None;
+    }
+
     log::logger().flush();
     for line in output_str.lines() {
       let parts: Vec<&str> = line.split_whitespace().collect();
       if let Some(pid_str) = parts.last() {
         match pid_str.parse::<usize>() {
           Ok(pid) => {
-            if let Some(path) = extract_parent_process_path(Pid::from(pid), &mut system) {
+            if let Some(path) = extract_parent_process_path(Pid::from(pid), system) {
               return Some(path);
             } else {
               error!("Failed to extract parent process for pid: {}", pid);
