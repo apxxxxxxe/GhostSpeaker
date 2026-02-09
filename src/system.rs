@@ -7,20 +7,26 @@ use sysinfo::{Pid, ProcessExt, System, SystemExt};
 use winapi::um::winbase::CREATE_NO_WINDOW;
 
 pub(crate) async fn get_port_opener_path(port: String) -> Option<String> {
-  let output = match tokio::time::timeout(
-    std::time::Duration::from_secs(10),
-    tokio::process::Command::new("cmd")
-      .args(["/C", &format!("netstat -ano | findstr LISTENING | findstr {}", port)])
-      .creation_flags(CREATE_NO_WINDOW)
-      .output()
-  ).await {
-    Ok(Ok(output)) => output,
-    Ok(Err(e)) => {
-      error!("{}", e);
-      return None;
+  match tokio::task::spawn_blocking(move || get_port_opener_path_sync(&port)).await {
+    Ok(result) => result,
+    Err(e) => {
+      error!("spawn_blocking failed in get_port_opener_path: {}", e);
+      None
     }
-    Err(_) => {
-      error!("get_port_opener_path timed out for port {}", port);
+  }
+}
+
+fn get_port_opener_path_sync(port: &str) -> Option<String> {
+  use std::os::windows::process::CommandExt;
+
+  let output = match Command::new("cmd")
+    .args(["/C", &format!("netstat -ano | findstr LISTENING | findstr {}", port)])
+    .creation_flags(CREATE_NO_WINDOW)
+    .output()
+  {
+    Ok(output) => output,
+    Err(e) => {
+      error!("{}", e);
       return None;
     }
   };
@@ -38,20 +44,12 @@ pub(crate) async fn get_port_opener_path(port: String) -> Option<String> {
       if let Some(pid_str) = parts.last() {
         match pid_str.parse::<usize>() {
           Ok(pid) => {
-            // sysinfo の重い処理を spawn_blocking で実行
-            let result = tokio::task::spawn_blocking(move || {
-              let mut system = System::new();
-              system.refresh_processes();
-              extract_parent_process_path(Pid::from(pid), &mut system)
-            }).await;
-            match result {
-              Ok(Some(path)) => return Some(path),
-              Ok(None) => {
-                error!("Failed to extract parent process for pid: {}", pid);
-              }
-              Err(e) => {
-                error!("spawn_blocking failed: {}", e);
-              }
+            let mut system = System::new();
+            system.refresh_processes();
+            if let Some(path) = extract_parent_process_path(Pid::from(pid), &mut system) {
+              return Some(path);
+            } else {
+              error!("Failed to extract parent process for pid: {}", pid);
             }
           }
           Err(e) => error!("failed to parse pid: {}: {}", pid_str, e),

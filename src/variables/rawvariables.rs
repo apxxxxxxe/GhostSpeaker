@@ -28,20 +28,22 @@ pub(crate) fn copy_from_raw(raw: &RawGlobalVariables) {
   if let Some(a) = raw.engine_auto_start.clone() {
     let handle = match crate::queue::RUNTIME.lock() {
       Ok(g) => match g.as_ref() {
-        Some(rt) => rt.handle().clone(),
+        Some(rt) => Some(rt.handle().clone()),
         None => {
           error!("Runtime is not initialized in copy_from_raw");
-          return;
+          None
         }
       },
       Err(e) => {
         error!("Failed to lock RUNTIME in copy_from_raw: {}", e);
-        return;
+        None
       }
     };
-    handle.block_on(async {
-      *ENGINE_AUTO_START.write().await = a;
-    });
+    if let Some(h) = handle {
+      h.block_on(async {
+        *ENGINE_AUTO_START.write().await = a;
+      });
+    }
   }
   if let Some(v) = raw.volume {
     match VOLUME.write() {

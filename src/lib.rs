@@ -119,7 +119,8 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
   *dll_dir = dll_path.to_string();
 
   panic::set_hook(Box::new(|panic_info| {
-    debug!("{}", panic_info);
+    error!("{}", panic_info);
+    log::logger().flush();
   }));
 
   // 自動起動が設定されているエンジンを起動
