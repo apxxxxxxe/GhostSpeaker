@@ -1,5 +1,21 @@
 use crate::events::common::*;
 use crate::ipc::send_command_logged;
+
+/// 同期読み上げモードを使用しないイベントIDのリスト。
+/// これらのイベントではベースウェアの終了シグナル等の動作を妨げないよう、
+/// 通常の非同期読み上げにフォールバックする。
+const SYNC_EXCLUDED_EVENTS: &[&str] = &[
+  "OnClose",
+  "OnCloseAll",
+  "OnGhostChanging",
+  "OnGhostCalling",
+  "OnShellChanging",
+  "OnWindowStateMinimize",
+  "OnFullScreenAppMinimize",
+  "OnCacheSuspend",
+  "OnVanishSelecting",
+  "OnVanishSelected",
+];
 use crate::plugin::request::PluginRequest;
 use crate::plugin::response::PluginResponse;
 use crate::variables::*;
@@ -9,6 +25,7 @@ pub(crate) fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
   let refs = get_references(req);
   let ghost_name = refs[0].to_string();
   let flags = refs[2].to_string();
+  let event_id = refs[3].to_string();
   let msg = refs[4].to_string();
 
   if msg.is_empty() || flags.contains("plugin-script") {
@@ -26,7 +43,7 @@ pub(crate) fn on_other_ghost_talk(req: &PluginRequest) -> PluginResponse {
     }
   };
 
-  if !sync_enabled {
+  if !sync_enabled || SYNC_EXCLUDED_EVENTS.contains(&event_id.as_str()) {
     debug!("pushing to prediction via IPC");
     send_command_logged(&Command::SpeakAsync {
       text: msg,
