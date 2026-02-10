@@ -647,6 +647,19 @@ async fn build_segments_async(
       vec![(dialog.text.clone(), dialog.raw_text.clone())]
     };
     for (t, rt) in pairs {
+      // 空テキストのセグメント（quicksection由来等）はTTS不要
+      if t.is_empty() {
+        if sync_mode && !rt.is_empty() {
+          // 同期モード: バルーン表示のみ（音声なし）
+          segments.push(SyncSegment {
+            text: t,
+            raw_text: rt,
+            scope: dialog.scope,
+            predictor: Box::new(NoOpPredictor),
+          });
+        }
+        continue;
+      }
       if is_ellipsis_segment(&t) {
         segments.push(SyncSegment {
           text: t,

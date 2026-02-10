@@ -331,7 +331,7 @@ fn handle_sync_start(text: String, ghost_name: String, state: &mut WorkerState) 
     is_ellipsis: is_ellipsis_segment(&first.text),
   };
 
-  if !first_info.is_ellipsis {
+  if !first_info.is_ellipsis && !first.text.is_empty() {
     let wav_result: Result<Vec<u8>, String> = handle.block_on(async {
       tokio::time::timeout(
         std::time::Duration::from_secs(30),
@@ -354,7 +354,7 @@ fn handle_sync_start(text: String, ghost_name: String, state: &mut WorkerState) 
       }
     }
   } else {
-    // 省略記号セグメント: 空のwavで再生開始
+    // 省略記号/空テキストセグメント: 空のwavで再生開始
     spawn_sync_playback(Vec::new(), handle);
   }
 
@@ -407,8 +407,8 @@ fn handle_sync_poll(state: &mut WorkerState) -> Response {
         seg.text, seg.raw_text, segment_info.is_ellipsis, has_more
       );
 
-      // 省略記号セグメントは音声再生なし（旧コードの挙動を維持）
-      if !segment_info.is_ellipsis {
+      // 省略記号セグメントと空テキストセグメント（quicksection由来）は音声再生なし
+      if !segment_info.is_ellipsis && !seg.text.is_empty() {
         spawn_sync_playback(seg.wav, handle);
       }
 

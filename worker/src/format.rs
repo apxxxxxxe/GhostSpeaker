@@ -30,7 +30,12 @@ pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
   let mut s = delete_quick_section(src);
 
   if devide_by_lines {
-    s = lines_re.replace_all(&s, "$0。").to_string();
+    // \0（null文字）を行区切りマーカーとして使用する。
+    // 以前は「。」を挿入していたが、raw_textには「。」が存在しないため、
+    // split_by_punctuation_with_rawの文字アライメントが破綻していた。
+    // \0はsplit_by_punctuationで自然に分割ポイントとして扱われ、
+    // raw_textとのアライメントに影響しない。
+    s = lines_re.replace_all(&s, "$0\u{0}").to_string();
   }
 
   let mut raws = split_dialog_local(s);
@@ -59,13 +64,13 @@ pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
       full.push_str(&r.raw_text);
       full
     };
-    for text in r.text.split('\u{0}') {
-      if text.is_empty() {
-        continue;
-      }
+    // \0はsplit_by_punctuationで分割されるため、ここでは分割しない。
+    // 以前は\0で分割していたが、各サブDialogが同じraw_textを共有してしまい、
+    // split_by_punctuation_with_rawのアライメントが不正になっていた。
+    if !r.text.is_empty() {
       result.push(Dialog {
-        text: text.to_string(),
-        raw_text: raw_text.clone(),
+        text: r.text.clone(),
+        raw_text,
         scope: r.scope,
       });
     }
@@ -108,13 +113,49 @@ pub fn is_ellipsis_segment(text: &str) -> bool {
 /// 同期モード用: \_q内の省略記号をraw_textベースで再分割する。
 /// clean textに省略記号がないがraw_textのクリーンテキストに省略記号がある場合、
 /// raw_textベースで再分割する。
+/// 再分割後、各セグメントのtextフィールドには元のclean text(t)に含まれる
+/// 文字だけを使用し、quicksection由来の文字はTTSに送らない。
 pub fn resplit_pairs_by_raw_ellipsis(pairs: Vec<(String, String)>) -> Vec<(String, String)> {
   let mut result = Vec::new();
   for (t, rt) in pairs {
     let rt_clean = clear_tags(rt.clone());
     if !t.is_empty() && !ELLIPSIS_RE.is_match(&t) && ELLIPSIS_RE.is_match(&rt_clean) {
       // \_q内の省略記号: raw-cleanベースで再分割
-      result.extend(split_by_punctuation_with_raw(rt_clean, rt));
+      let new_pairs = split_by_punctuation_with_raw(rt_clean.clone(), rt);
+
+      // rt_cleanの各文字が元のtに含まれるかをマッピング
+      // tはrt_cleanの部分列（quicksection内容除去後）なので、
+      // 貪欲マッチングで対応関係を特定できる
+      let rt_clean_chars: Vec<char> = rt_clean.chars().collect();
+      let t_chars: Vec<char> = t.chars().collect();
+      let mut is_original = vec![false; rt_clean_chars.len()];
+      let mut t_idx = 0;
+      for (i, &c) in rt_clean_chars.iter().enumerate() {
+        if t_idx < t_chars.len() && c == t_chars[t_idx] {
+          is_original[i] = true;
+          t_idx += 1;
+        }
+      }
+
+      // 各新ペアについて、元のtに対応する文字だけをtext fieldに使う
+      let mut rt_clean_pos = 0;
+      for (seg_text, seg_raw) in new_pairs {
+        let seg_char_count = seg_text.chars().count();
+        if is_ellipsis_segment(&seg_text) {
+          rt_clean_pos += seg_char_count;
+          result.push((seg_text, seg_raw));
+        } else {
+          let mut clean_text = String::new();
+          for i in 0..seg_char_count {
+            let idx = rt_clean_pos + i;
+            if idx < is_original.len() && is_original[idx] {
+              clean_text.push(rt_clean_chars[idx]);
+            }
+          }
+          rt_clean_pos += seg_char_count;
+          result.push((clean_text, seg_raw));
+        }
+      }
     } else {
       result.push((t, rt));
     }
