@@ -104,6 +104,26 @@ pub(crate) fn on_sync_speech_continue(req: &PluginRequest) -> PluginResponse {
   let (segment, has_more) = pop_ready_segment(&ghost_name);
 
   match segment {
+    Some(seg) if is_ellipsis_segment(&seg.text) => {
+      // 省略記号: 音声再生なし、\Cで追記表示
+      let script = if has_more {
+        format!(
+          "\\C{}{}\\![raiseplugin,{},OnSyncSpeechContinue,{}]",
+          scope_to_tag(seg.scope),
+          seg.raw_text,
+          PLUGIN_UUID,
+          ghost_name,
+        )
+      } else {
+        // 最後のセグメントが省略記号 → チェーン終了、ステートクリア
+        match SYNC_STATE.lock() {
+          Ok(mut s) => *s = None,
+          Err(e) => error!("Failed to lock SYNC_STATE: {}", e),
+        }
+        format!("\\C{}{}", scope_to_tag(seg.scope), seg.raw_text)
+      };
+      new_response_with_script(script, false)
+    }
     Some(seg) => {
       // 再生開始
       spawn_sync_playback(seg.wav);

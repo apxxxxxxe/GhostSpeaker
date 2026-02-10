@@ -2,7 +2,9 @@ use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
 use crate::engine::{engine_from_port, get_speaker_getters, Engine, NoOpPredictor, Predictor, NO_VOICE_UUID};
-use crate::format::{is_ellipsis_segment, split_by_punctuation_with_raw, split_dialog};
+use crate::format::{
+  is_ellipsis_segment, resplit_pairs_by_raw_ellipsis, split_by_punctuation_with_raw, split_dialog,
+};
 use crate::player::play_wav;
 use crate::system::get_port_opener_path;
 use crate::variables::GHOSTS_VOICES;
@@ -656,7 +658,9 @@ async fn build_segments_async(
       None => continue,
     };
     let pairs = if (speak_by_punctuation_val || sync_mode) && engine != Engine::BouyomiChan {
-      split_by_punctuation_with_raw(dialog.text.clone(), dialog.raw_text.clone())
+      let p = split_by_punctuation_with_raw(dialog.text.clone(), dialog.raw_text.clone());
+      // 同期モード: \_q内の省略記号をraw_textベースで再分割
+      if sync_mode { resplit_pairs_by_raw_ellipsis(p) } else { p }
     } else {
       /* 棒読みちゃんは細切れの恩恵が少ない&
       読み上げ順がばらばらになることがあるので常にまとめて読み上げる */

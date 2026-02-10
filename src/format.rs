@@ -100,6 +100,25 @@ pub(crate) fn is_ellipsis_segment(text: &str) -> bool {
   ELLIPSIS_FULL_RE.is_match(text)
 }
 
+/// 同期モード用: \_q内の省略記号をraw_textベースで再分割する。
+/// clean textに省略記号がないがraw_textのクリーンテキストに省略記号がある場合、
+/// raw_textベースで再分割する。
+pub(crate) fn resplit_pairs_by_raw_ellipsis(
+  pairs: Vec<(String, String)>,
+) -> Vec<(String, String)> {
+  let mut result = Vec::new();
+  for (t, rt) in pairs {
+    let rt_clean = clear_tags(rt.clone());
+    if !t.is_empty() && !ELLIPSIS_RE.is_match(&t) && ELLIPSIS_RE.is_match(&rt_clean) {
+      // \_q内の省略記号: raw-cleanベースで再分割
+      result.extend(split_by_punctuation_with_raw(rt_clean, rt));
+    } else {
+      result.push((t, rt));
+    }
+  }
+  result
+}
+
 pub(crate) fn split_by_punctuation(src: String) -> Vec<String> {
   let t = DELIMS_RE.replace_all(&src, "$0\u{0}").to_string();
   let mut result = Vec::new();
