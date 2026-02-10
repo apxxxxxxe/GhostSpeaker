@@ -24,8 +24,11 @@ impl Predictor for VoicevoxFamilyPredictor {
   async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let domain: String = format!("http://localhost:{}/", self.engine.port());
 
+    let client =
+      crate::engine::get_http_client().ok_or_else(|| "HTTP client not initialized".to_string())?;
+
     let synthesis_req: Vec<u8>;
-    match crate::engine::HTTP_CLIENT.clone()
+    match client
       .post(&format!("{}{}", domain, "audio_query"))
       .query(&[
         ("speaker", self.speaker.to_string()),
@@ -56,7 +59,7 @@ impl Predictor for VoicevoxFamilyPredictor {
     }
 
     let wav: Vec<u8>;
-    match crate::engine::HTTP_CLIENT.clone()
+    match client
       .post(&format!("{}{}", domain, "synthesis"))
       .header("Content-Type", "application/json")
       .header("Accept", "audio/wav")

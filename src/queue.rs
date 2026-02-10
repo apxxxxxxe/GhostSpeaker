@@ -1,7 +1,9 @@
 use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
-use crate::engine::{engine_from_port, get_speaker_getters, Engine, NoOpPredictor, Predictor, NO_VOICE_UUID};
+use crate::engine::{
+  engine_from_port, get_speaker_getters, Engine, NoOpPredictor, Predictor, NO_VOICE_UUID,
+};
 use crate::format::{
   is_ellipsis_segment, resplit_pairs_by_raw_ellipsis, split_by_punctuation_with_raw, split_dialog,
 };
@@ -106,7 +108,9 @@ fn init_speak_queue() {
             Ok(speakers_info) => {
               consecutive_failures.insert(engine, 0);
               let was_disconnected = {
-                let cs = CURRENT_CONNECTION_STATUS.read().unwrap_or_else(|e| e.into_inner());
+                let cs = CURRENT_CONNECTION_STATUS
+                  .read()
+                  .unwrap_or_else(|e| e.into_inner());
                 cs.get(&engine).is_none() || cs.get(&engine).is_some_and(|v| !*v)
               };
               if was_disconnected {
@@ -125,13 +129,19 @@ fn init_speak_queue() {
                     auto_start.insert(engine, false);
                   }
                 } else {
-                  error!("Failed to lock ENGINE_AUTO_START for engine: {}", engine.name());
+                  error!(
+                    "Failed to lock ENGINE_AUTO_START for engine: {}",
+                    engine.name()
+                  );
                 }
               }
               if let Ok(mut cs) = CURRENT_CONNECTION_STATUS.write() {
                 cs.insert(engine, true);
               } else {
-                error!("Failed to lock CURRENT_CONNECTION_STATUS for engine: {}", engine.name());
+                error!(
+                  "Failed to lock CURRENT_CONNECTION_STATUS for engine: {}",
+                  engine.name()
+                );
               }
               if let Ok(mut si) = SPEAKERS_INFO.write() {
                 si.insert(engine, speakers_info);
@@ -142,10 +152,7 @@ fn init_speak_queue() {
             Err(e) => {
               let failures = consecutive_failures.entry(engine).or_insert(0);
               *failures += 1;
-              error!(
-                "Error: {} (consecutive failures: {})",
-                e, *failures
-              );
+              error!("Error: {} (consecutive failures: {})", e, *failures);
 
               if *failures >= MAX_CONSECUTIVE_FAILURES {
                 error!(
@@ -158,7 +165,9 @@ fn init_speak_queue() {
 
               {
                 let was_connected = {
-                  let cs = CURRENT_CONNECTION_STATUS.read().unwrap_or_else(|e| e.into_inner());
+                  let cs = CURRENT_CONNECTION_STATUS
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner());
                   cs.get(&engine).is_some_and(|v| *v)
                 };
                 if was_connected {
@@ -313,10 +322,7 @@ pub(crate) fn init_play_queue() {
         if !data.is_empty() {
           last_activity = Instant::now(); // アクティビティ更新
           debug!("{}", format!("play: {}", data.len()));
-          match tokio::task::spawn_blocking(move || {
-            play_wav(data).map_err(|e| e.to_string())
-          })
-          .await
+          match tokio::task::spawn_blocking(move || play_wav(data).map_err(|e| e.to_string())).await
           {
             Ok(Ok(())) => {}
             Ok(Err(e)) => error!("play_wav failed: {}", e),
@@ -344,10 +350,7 @@ pub(crate) fn init_queues() {
     .lock()
     .unwrap_or_else(|e| e.into_inner())
     .clear();
-  PLAY_QUEUE
-    .lock()
-    .unwrap_or_else(|e| e.into_inner())
-    .clear();
+  PLAY_QUEUE.lock().unwrap_or_else(|e| e.into_inner()).clear();
   CONNECTION_DIALOGS
     .lock()
     .unwrap_or_else(|e| e.into_inner())
@@ -366,6 +369,9 @@ pub(crate) fn init_queues() {
 
   // ランタイムを必要に応じて作成（DLLリロード後の再生成対応）
   ensure_runtime();
+
+  // HTTPクライアントを初期化（DLLリロード後の再生成対応）
+  crate::engine::init_http_client();
 
   init_speak_queue();
   init_predict_queue();
@@ -386,11 +392,11 @@ pub(crate) fn stop_async_tasks() -> Result<
     Ok(mut s) => *s = None,
     Err(e) => error!("Failed to lock SYNC_STATE during shutdown: {}", e),
   }
-  
+
   // 音声再生を即座に強制停止
   crate::player::FORCE_STOP_SINK.store(true, Ordering::Release);
   debug!("{}", "set force stop sink flag");
-  
+
   // ランタイムの存在を確認
   let runtime_available = get_runtime_handle().is_some();
 
@@ -400,7 +406,7 @@ pub(crate) fn stop_async_tasks() -> Result<
     PREDICT_STOPPER.store(true, Ordering::Release);
     SPEAK_QUEUE_STOPPER.store(true, Ordering::Release);
     debug!("{}", "set all stop flags");
-    
+
     // 同期ハンドラをabort
     for (name, handler_mutex) in [
       ("sync_prediction", &*SYNC_PREDICTION_HANDLER),
@@ -484,16 +490,16 @@ pub(crate) fn stop_async_tasks() -> Result<
     .lock()
     .unwrap_or_else(|e| e.into_inner())
     .clear();
-  PLAY_QUEUE
-    .lock()
-    .unwrap_or_else(|e| e.into_inner())
-    .clear();
+  PLAY_QUEUE.lock().unwrap_or_else(|e| e.into_inner()).clear();
   CONNECTION_DIALOGS
     .lock()
     .unwrap_or_else(|e| e.into_inner())
     .clear();
 
   crate::system::cleanup_system_cache();
+
+  // HTTPクライアントを明示的にドロップ（ランタイム停止前にコネクションプールを解放）
+  crate::engine::shutdown_http_client();
 
   debug!("{}", "stopped async tasks");
   Ok(())
@@ -531,13 +537,15 @@ async fn args_to_predictors(
   args: (String, String),
 ) -> Option<VecDeque<Box<dyn Predictor + Send + Sync>>> {
   let (text, ghost_name) = args;
-  build_segments_async(text, ghost_name, false).await.map(|segments| {
-    segments
-      .into_iter()
-      .filter(|seg| !is_ellipsis_segment(&seg.text))
-      .map(|seg| seg.predictor)
-      .collect()
-  })
+  build_segments_async(text, ghost_name, false)
+    .await
+    .map(|segments| {
+      segments
+        .into_iter()
+        .filter(|seg| !is_ellipsis_segment(&seg.text))
+        .map(|seg| seg.predictor)
+        .collect()
+    })
 }
 
 pub(crate) struct SyncSegment {
@@ -605,7 +613,12 @@ async fn build_segments_async(
         return None;
       }
     };
-    (devide_by_lines, speak_by_punctuation_val, speakers, initial_voice)
+    (
+      devide_by_lines,
+      speak_by_punctuation_val,
+      speakers,
+      initial_voice,
+    )
   };
   // ここではすべてのstd::sync::RwLockガードがドロップ済み
 
@@ -660,7 +673,11 @@ async fn build_segments_async(
     let pairs = if (speak_by_punctuation_val || sync_mode) && engine != Engine::BouyomiChan {
       let p = split_by_punctuation_with_raw(dialog.text.clone(), dialog.raw_text.clone());
       // 同期モード: \_q内の省略記号をraw_textベースで再分割
-      if sync_mode { resplit_pairs_by_raw_ellipsis(p) } else { p }
+      if sync_mode {
+        resplit_pairs_by_raw_ellipsis(p)
+      } else {
+        p
+      }
     } else {
       /* 棒読みちゃんは細切れの恩恵が少ない&
       読み上げ順がばらばらになることがあるので常にまとめて読み上げる */
@@ -682,9 +699,7 @@ async fn build_segments_async(
           speaker.speaker_uuid.clone(),
           speaker.style_id,
         )),
-        Engine::BouyomiChan => {
-          Box::new(BouyomichanPredictor::new(t.clone(), speaker.style_id))
-        }
+        Engine::BouyomiChan => Box::new(BouyomichanPredictor::new(t.clone(), speaker.style_id)),
         Engine::CoeiroInkV1
         | Engine::VoiceVox
         | Engine::Lmroid
@@ -737,17 +752,14 @@ pub(crate) static SYNC_STATE: Lazy<StdMutex<Option<SyncPlaybackState>>> =
 // 世代カウンタ方式: Mutexを排除しロックフリーに
 // SYNC_AUDIO_GENERATION: 再生開始ごとにインクリメント
 // SYNC_AUDIO_DONE_GEN: スレッド完了時にfetch_maxで更新
-static SYNC_AUDIO_GENERATION: std::sync::atomic::AtomicU64 =
-  std::sync::atomic::AtomicU64::new(0);
-static SYNC_AUDIO_DONE_GEN: std::sync::atomic::AtomicU64 =
-  std::sync::atomic::AtomicU64::new(0);
+static SYNC_AUDIO_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SYNC_AUDIO_DONE_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub(crate) static SYNC_PREDICTION_HANDLER: Lazy<StdMutex<Option<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| StdMutex::new(None));
 
 pub(crate) static SYNC_PLAYBACK_HANDLER: Lazy<StdMutex<Option<tokio::task::JoinHandle<()>>>> =
   Lazy::new(|| StdMutex::new(None));
-
 
 pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
   if SHUTTING_DOWN.load(Ordering::Acquire) {
@@ -763,11 +775,7 @@ pub(crate) fn spawn_sync_playback(wav: Vec<u8>) {
   };
   let task_handle = handle.spawn(async move {
     if !wav.is_empty() {
-      match tokio::task::spawn_blocking(move || {
-        play_wav(wav).map_err(|e| e.to_string())
-      })
-      .await
-      {
+      match tokio::task::spawn_blocking(move || play_wav(wav).map_err(|e| e.to_string())).await {
         Ok(Ok(())) => {}
         Ok(Err(e)) => error!("sync play_wav failed: {}", e),
         Err(e) => error!("sync play_wav spawn_blocking failed: {}", e),
@@ -908,9 +916,7 @@ pub(crate) fn spawn_sync_prediction(segments: Vec<SyncSegment>, ghost_name: Stri
 }
 
 /// 同期モード用: プールから合成済みセグメントを取得し、残りがあるかも返す
-pub(crate) fn pop_ready_segment(
-  ghost_name: &str,
-) -> (Option<SyncReadySegment>, bool) {
+pub(crate) fn pop_ready_segment(ghost_name: &str) -> (Option<SyncReadySegment>, bool) {
   match SYNC_STATE.lock() {
     Ok(mut state) => match state.as_mut() {
       Some(s) if s.ghost_name == ghost_name => {

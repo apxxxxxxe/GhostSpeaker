@@ -58,7 +58,9 @@ impl SpeakerGetter for VoicevoxFamilySpeakerGetter {
     println!("Requesting speakers info from {}", domain);
 
     debug!("getting speakers info");
-    let body = crate::engine::HTTP_CLIENT.clone()
+    let client =
+      crate::engine::get_http_client().ok_or_else(|| "HTTP client not initialized".to_string())?;
+    let body = client
       .get(format!("{}{}", domain, "speakers").as_str())
       .header("Content-Type", "application/json")
       .send()

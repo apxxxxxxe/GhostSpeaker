@@ -69,8 +69,11 @@ impl Predictor for CoeiroinkV2Predictor {
       }
     };
 
+    let client =
+      crate::engine::get_http_client().ok_or_else(|| "HTTP client not initialized".to_string())?;
+
     let wav: Vec<u8>;
-    match crate::engine::HTTP_CLIENT.clone()
+    match client
       .post(URL)
       .header("Content-Type", "application/json")
       .header("Accept", "audio/wav")

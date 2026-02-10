@@ -9,19 +9,38 @@ use coeiroink_v2::speaker::CoeiroinkV2SpeakerGetter;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Mutex as StdMutex;
 use voicevox_family::speaker::VoicevoxFamilySpeakerGetter;
 
+pub(crate) static HTTP_CLIENT: Lazy<StdMutex<Option<reqwest::Client>>> =
+  Lazy::new(|| StdMutex::new(None));
 
-pub(crate) static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-  reqwest::Client::builder()
+/// HTTP_CLIENT を初期化する
+pub(crate) fn init_http_client() {
+  let client = reqwest::Client::builder()
     .connect_timeout(std::time::Duration::from_secs(5))
     .timeout(std::time::Duration::from_secs(30))
     .build()
     .unwrap_or_else(|e| {
       error!("Failed to build HTTP client with custom settings: {}", e);
       reqwest::Client::new()
-    })
-});
+    });
+  if let Ok(mut guard) = HTTP_CLIENT.lock() {
+    *guard = Some(client);
+  }
+}
+
+/// HTTP_CLIENT からクライアントのクローンを取得する
+pub(crate) fn get_http_client() -> Option<reqwest::Client> {
+  HTTP_CLIENT.lock().ok().and_then(|guard| guard.clone())
+}
+
+/// HTTP_CLIENT を明示的にドロップする（DLLアンロード時に呼ぶ）
+pub(crate) fn shutdown_http_client() {
+  if let Ok(mut guard) = HTTP_CLIENT.lock() {
+    let _ = guard.take();
+  }
+}
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Engine {
