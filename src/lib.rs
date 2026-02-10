@@ -210,13 +210,23 @@ fn common_load_process(dll_path: &str) -> Result<(), ()> {
   };
   {
     use sysinfo::{System, SystemExt};
-    let mut system = System::new();
-    system.refresh_processes();
-    for (engine, auto_start) in engine_auto_start.iter() {
-      if *auto_start {
-        if let Err(e) = boot_engine(*engine, &system) {
-          error!("Failed to boot {}: {}", engine.name(), e);
+    let system_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      let mut system = System::new();
+      system.refresh_processes();
+      system
+    }));
+    match system_result {
+      Ok(system) => {
+        for (engine, auto_start) in engine_auto_start.iter() {
+          if *auto_start {
+            if let Err(e) = boot_engine(*engine, &system) {
+              error!("Failed to boot {}: {}", engine.name(), e);
+            }
+          }
         }
+      }
+      Err(e) => {
+        error!("sysinfo panicked during engine auto-start: {:?}", e);
       }
     }
   }

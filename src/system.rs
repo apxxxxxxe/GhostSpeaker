@@ -75,10 +75,17 @@ fn get_port_opener_path_sync(port: &str) -> Option<String> {
     }
 
     // sysinfo呼び出しをcatch_unwindで保護 + Systemインスタンスをキャッシュ
-    let system = guard.get_or_insert_with(|| {
+    if guard.is_none() {
       debug!("Creating new System instance");
-      System::new()
-    });
+      match std::panic::catch_unwind(std::panic::AssertUnwindSafe(System::new)) {
+        Ok(system) => *guard = Some(system),
+        Err(e) => {
+          error!("sysinfo System::new() panicked: {:?}", e);
+          return None;
+        }
+      }
+    }
+    let system = guard.as_mut().unwrap();
     let refresh_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       system.refresh_processes();
     }));
