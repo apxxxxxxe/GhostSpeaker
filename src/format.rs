@@ -74,16 +74,22 @@ pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
 }
 
 
-/// テキストを正規表現で分割し、マッチ部分も独立要素として保持する。
-/// 例: split_keeping_delimiters("あ……い", /[…]+/) => ["あ", "……", "い"]
+/// テキストを正規表現で分割する。
+/// マッチ部分が先頭にある場合は独立セグメントとし、
+/// 前にテキストがある場合は前テキストと結合する。
+/// 例: split_keeping_delimiters("あ……い", /[…]+/) => ["あ……", "い"]
+/// 例: split_keeping_delimiters("……い", /[…]+/) => ["……", "い"]
 fn split_keeping_delimiters(text: &str, re: &Regex) -> Vec<String> {
   let mut result = Vec::new();
   let mut last_end = 0;
   for m in re.find_iter(text) {
     if m.start() > last_end {
-      result.push(text[last_end..m.start()].to_string());
+      // 前テキストがある場合: 前テキスト+マッチを結合
+      result.push(text[last_end..m.end()].to_string());
+    } else {
+      // 先頭の省略記号: 独立セグメント
+      result.push(m.as_str().to_string());
     }
-    result.push(m.as_str().to_string());
     last_end = m.end();
   }
   if last_end < text.len() {
