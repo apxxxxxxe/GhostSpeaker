@@ -180,10 +180,3 @@ pub(crate) fn shutdown_worker() -> Result<(), String> {
 
   Ok(())
 }
-
-pub(crate) fn is_worker_running() -> bool {
-  match WORKER.lock() {
-    Ok(guard) => guard.is_some(),
-    Err(_) => false,
-  }
-}
