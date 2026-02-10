@@ -130,7 +130,13 @@ pub(crate) fn on_ghost_boot(req: &PluginRequest) -> PluginResponse {
     }
   };
   if ghosts_voices.get(&ghost_name).is_none() {
-    ghosts_voices.insert(ghost_name, GhostVoiceInfo::new(characters.len()));
+    let info = GhostVoiceInfo::new(characters.len());
+    // ワーカーにも新ゴストの情報を通知
+    send_command_logged(&Command::UpdateGhostVoices {
+      ghost_name: ghost_name.clone(),
+      info: info.clone(),
+    });
+    ghosts_voices.insert(ghost_name, info);
   }
 
   new_response_nocontent()

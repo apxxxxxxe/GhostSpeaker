@@ -291,9 +291,12 @@ fn handle_sync_start(text: String, ghost_name: String, state: &mut WorkerState) 
   let handle = &state.runtime_handle;
 
   // セグメントを構築
-  let segments = match build_segments(text, ghost_name.clone(), true, handle) {
-    Some(s) => s,
-    None => {
+  let segments = match build_segments(text.clone(), ghost_name.clone(), true, handle) {
+    Some(s) if s.len() >= 2 => s,
+    _ => {
+      // セグメント1つ以下 → 同期不要、通常モードにフォールバック
+      debug!("SyncStart: segments < 2, falling back to async mode");
+      push_to_prediction(text, ghost_name);
       return Response::SyncStarted {
         first_segment: None,
         has_more: false,
@@ -301,11 +304,17 @@ fn handle_sync_start(text: String, ghost_name: String, state: &mut WorkerState) 
     }
   };
 
-  if segments.is_empty() {
-    return Response::SyncStarted {
-      first_segment: None,
-      has_more: false,
-    };
+  // デバッグ: 全セグメントの内容をログ出力
+  debug!(
+    "SyncStart: {} segments for ghost={}",
+    segments.len(),
+    ghost_name
+  );
+  for (i, seg) in segments.iter().enumerate() {
+    debug!(
+      "  seg[{}]: text={:?}, raw_text={:?}, scope={}",
+      i, seg.text, seg.raw_text, seg.scope
+    );
   }
 
   // 最初のセグメントを分離
@@ -393,8 +402,23 @@ fn handle_sync_poll(state: &mut WorkerState) -> Response {
         is_ellipsis: is_ellipsis_segment(&seg.text),
       };
 
-      // 再生開始
-      spawn_sync_playback(seg.wav, handle);
+      debug!(
+        "SyncPoll: Ready seg text={:?}, raw_text={:?}, is_ellipsis={}, has_more={}",
+        seg.text, seg.raw_text, segment_info.is_ellipsis, has_more
+      );
+
+      // 省略記号セグメントは音声再生なし（旧コードの挙動を維持）
+      if !segment_info.is_ellipsis {
+        spawn_sync_playback(seg.wav, handle);
+      }
+
+      // 最後のセグメント → ステートクリア
+      if !has_more {
+        match SYNC_STATE.lock() {
+          Ok(mut s) => *s = None,
+          Err(e) => error!("Failed to lock SYNC_STATE for cleanup: {}", e),
+        }
+      }
 
       Response::SyncStatus {
         state: SyncState::Ready {
@@ -417,6 +441,10 @@ fn handle_sync_poll(state: &mut WorkerState) -> Response {
 
       if is_complete {
         state.sync_ghost_name = None;
+        match SYNC_STATE.lock() {
+          Ok(mut s) => *s = None,
+          Err(e) => error!("Failed to lock SYNC_STATE for complete cleanup: {}", e),
+        }
         Response::SyncStatus {
           state: SyncState::Complete,
         }
