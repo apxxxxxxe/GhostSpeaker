@@ -61,7 +61,10 @@ unsafe extern "system" fn veh_handler(info: *mut EXCEPTION_POINTERS) -> LONG {
         let _ = writeln!(
           f,
           "VEH: exception 0x{:08X} at address 0x{:08X} (count: {}/{})",
-          code, address, count + 1, MAX_VEH_LOG_ENTRIES
+          code,
+          address,
+          count + 1,
+          MAX_VEH_LOG_ENTRIES
         );
       }
     }

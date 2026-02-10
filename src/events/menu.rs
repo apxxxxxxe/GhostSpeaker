@@ -345,22 +345,25 @@ fn get_voice(c: &Option<CharacterVoice>) -> String {
     voice = NO_VOICE.to_string();
   } else if let Some(engine) = engine_from_port(c.port) {
     if let Some(speakers_by_engine) = speakers_info.get(&engine) {
-    if let Some(speaker) = speakers_by_engine
-      .iter()
-      .find(|s| s.speaker_uuid == c.speaker_uuid)
-    {
-      if let Some(style) = speaker
-        .styles
+      if let Some(speaker) = speakers_by_engine
         .iter()
-        .find(|s| s.style_id.unwrap_or(-1) == c.style_id)
+        .find(|s| s.speaker_uuid == c.speaker_uuid)
       {
-        voice = format!(
-          "{} - {}",
-          speaker.speaker_name,
-          style.style_name.clone().unwrap_or_else(|| "不明なスタイル".to_string()),
-        );
+        if let Some(style) = speaker
+          .styles
+          .iter()
+          .find(|s| s.style_id.unwrap_or(-1) == c.style_id)
+        {
+          voice = format!(
+            "{} - {}",
+            speaker.speaker_name,
+            style
+              .style_name
+              .clone()
+              .unwrap_or_else(|| "不明なスタイル".to_string()),
+          );
+        }
       }
-    }
     } else {
       voice = grayed(&format!(
         "【使用不可: {}の起動が必要】",
@@ -404,7 +407,10 @@ fn list_callback_for_characters(
       format!(
         "\\![*]\\q[{} | {},OnVoiceSelected,{},{},{},{},{},{}]\\n",
         speaker.speaker_name,
-        style.style_name.as_ref().unwrap_or(&"不明なスタイル".to_string()),
+        style
+          .style_name
+          .as_ref()
+          .unwrap_or(&"不明なスタイル".to_string()),
         ghost_name,
         character_index,
         engine.port(),
@@ -602,7 +608,10 @@ fn list_callback_for_defaultvoices(
       format!(
         "\\![*]\\q[{} | {},OnDefaultVoiceSelected,{},{},{},{},{}]\\n",
         speaker.speaker_name,
-        style.style_name.as_ref().unwrap_or(&"不明なスタイル".to_string()),
+        style
+          .style_name
+          .as_ref()
+          .unwrap_or(&"不明なスタイル".to_string()),
         engine.port(),
         speaker.speaker_uuid,
         style.style_id.unwrap_or(-1),
@@ -694,7 +703,10 @@ pub(crate) fn on_default_voice_selected(req: &PluginRequest) -> PluginResponse {
     style_id: match style_id.to_string().parse::<i32>() {
       Ok(id) => id,
       Err(e) => {
-        error!("Failed to parse style_id in on_default_voice_selected: {}", e);
+        error!(
+          "Failed to parse style_id in on_default_voice_selected: {}",
+          e
+        );
         return new_response_with_script(String::new(), false);
       }
     },

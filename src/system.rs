@@ -41,12 +41,18 @@ fn get_port_opener_path_sync(port: &str) -> Option<String> {
 
   // チェックポイント2: ロック取得後、netstat実行前（待機後の再確認）
   if SHUTTING_DOWN.load(Ordering::Acquire) {
-    debug!("shutting down after lock acquired, skipping port check for {}", port);
+    debug!(
+      "shutting down after lock acquired, skipping port check for {}",
+      port
+    );
     return None;
   }
 
   let output = match Command::new("cmd")
-    .args(["/C", &format!("netstat -ano | findstr LISTENING | findstr {}", port)])
+    .args([
+      "/C",
+      &format!("netstat -ano | findstr LISTENING | findstr {}", port),
+    ])
     .creation_flags(CREATE_NO_WINDOW)
     .output()
   {
@@ -65,12 +71,18 @@ fn get_port_opener_path_sync(port: &str) -> Option<String> {
         return None;
       }
     };
-    debug!("netstat found listening process on port {}, querying process info", port);
+    debug!(
+      "netstat found listening process on port {}, querying process info",
+      port
+    );
     log::logger().flush();
 
     // チェックポイント3: refresh_processes()呼び出し直前（クラッシュサイト防御）
     if SHUTTING_DOWN.load(Ordering::Acquire) {
-      debug!("shutting down before refresh_processes, skipping port check for {}", port);
+      debug!(
+        "shutting down before refresh_processes, skipping port check for {}",
+        port
+      );
       return None;
     }
 
@@ -168,7 +180,10 @@ fn extract_parent_process_path(pid: Pid, system: &mut System) -> Option<String> 
   }
 }
 
-pub(crate) fn boot_engine(engine: Engine, system: &System) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn boot_engine(
+  engine: Engine,
+  system: &System,
+) -> Result<(), Box<dyn std::error::Error>> {
   let engine_path = match ENGINE_PATH.read() {
     Ok(ep) => ep,
     Err(e) => {

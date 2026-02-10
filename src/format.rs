@@ -73,7 +73,6 @@ pub(crate) fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
   result
 }
 
-
 /// テキストを正規表現で分割する。
 /// マッチ部分が先頭にある場合は独立セグメントとし、
 /// 前にテキストがある場合は前テキストと結合する。
@@ -109,9 +108,7 @@ pub(crate) fn is_ellipsis_segment(text: &str) -> bool {
 /// 同期モード用: \_q内の省略記号をraw_textベースで再分割する。
 /// clean textに省略記号がないがraw_textのクリーンテキストに省略記号がある場合、
 /// raw_textベースで再分割する。
-pub(crate) fn resplit_pairs_by_raw_ellipsis(
-  pairs: Vec<(String, String)>,
-) -> Vec<(String, String)> {
+pub(crate) fn resplit_pairs_by_raw_ellipsis(pairs: Vec<(String, String)>) -> Vec<(String, String)> {
   let mut result = Vec::new();
   for (t, rt) in pairs {
     let rt_clean = clear_tags(rt.clone());
@@ -142,16 +139,10 @@ pub(crate) fn split_by_punctuation(src: String) -> Vec<String> {
   result
 }
 
-pub(crate) fn split_by_punctuation_with_raw(
-  clean: String,
-  raw: String,
-) -> Vec<(String, String)> {
+pub(crate) fn split_by_punctuation_with_raw(clean: String, raw: String) -> Vec<(String, String)> {
   let clean_segments = split_by_punctuation(clean);
   if clean_segments.len() <= 1 {
-    return vec![(
-      clean_segments.into_iter().next().unwrap_or_default(),
-      raw,
-    )];
+    return vec![(clean_segments.into_iter().next().unwrap_or_default(), raw)];
   }
 
   let tag_re = sakura_script_regex();
@@ -189,9 +180,7 @@ pub(crate) fn split_by_punctuation_with_raw(
           let mut found = false;
           while scan_pos < raw_bytes.len() {
             // タグをスキップ
-            while scan_tag_idx < tag_ranges.len()
-              && tag_ranges[scan_tag_idx].0 == scan_pos
-            {
+            while scan_tag_idx < tag_ranges.len() && tag_ranges[scan_tag_idx].0 == scan_pos {
               scan_pos = tag_ranges[scan_tag_idx].1;
               scan_tag_idx += 1;
             }

@@ -29,7 +29,8 @@ impl Predictor for BouyomichanPredictor {
     let style_id = self.style_id as i16;
     let result = tokio::task::spawn_blocking(move || {
       speak(&text, style_id, volume).map_err(|e| e.to_string())
-    }).await;
+    })
+    .await;
     match result {
       Ok(Ok(())) => {}
       Ok(Err(e)) => return Err(e.into()),
