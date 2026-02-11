@@ -116,7 +116,7 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   debug!("success to get ghosts_voices");
 
   debug!("getting speakers_info");
-  let speakers_info = &mut match SPEAKERS_INFO.read() {
+  let speakers_info = match SPEAKERS_INFO.read() {
     Ok(si) => si.clone(),
     Err(e) => {
       error!("Failed to read SPEAKERS_INFO: {}", e);
@@ -182,44 +182,18 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
   ));
   characters_info.push_str(&format!("【{}】\\n", character_resize_buttons));
 
-  let mut engine_status = String::new();
-  let engine_auto_start = match ENGINE_AUTO_START.read() {
-    Ok(eas) => eas,
-    Err(e) => {
-      error!("Failed to read ENGINE_AUTO_START: {}", e);
-      return new_response_with_script(String::new(), false);
-    }
-  };
-  for engine in ENGINE_LIST.iter() {
-    if speakers_info.contains_key(engine) {
-      engine_status += &format!("{}: {}", engine.name(), greened("起動中"),);
-    } else {
-      engine_status += &format!("{}: {}", engine.name(), grayed("停止中"),);
-    }
-    let is_auto_start_string: String;
-    if let Some(is_auto_start) = engine_auto_start.get(engine) {
-      if *is_auto_start {
-        is_auto_start_string = decorated(&ACTIVATED, "bold");
-      } else {
-        is_auto_start_string = decorated(&DEACTIVATED, "bold");
-      }
-      engine_status += &format!(
-        "\\_l[@0,]\\f[align,right]自動起動: \\__q[OnAutoStartToggled,{},{},{}]{}\\__q\\n",
-        engine.port(),
-        refs[1],
-        path_for_arg,
-        is_auto_start_string,
-      );
-    } else {
-      engine_status += &format!(
-        "\\_l[@0,]\\f[align,right]自動起動: {}\\n",
-        grayed("設定未完了")
-      );
-    }
-  }
-  if !engine_status.is_empty() {
-    engine_status += "\\n";
-  }
+  // エンジンサマリー: 起動中エンジン数 / 全エンジン数
+  let running_count = ENGINE_LIST
+    .iter()
+    .filter(|e| speakers_info.contains_key(e))
+    .count();
+  let total_count = ENGINE_LIST.len();
+  let engine_summary = format!(
+    "\\__q[OnEngineStatusMenu,{},{}]{}\\__q\\n",
+    ghost_name,
+    path_for_arg,
+    decorated("\\![*]詳細", "bold"),
+  );
 
   let unit: f32 = 0.05;
   let v = match VOLUME.read() {
@@ -287,19 +261,29 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     "\
       \\b[2]\\_q\
       \\f[align,center]\\f[size,12]{} v{}\\f[size,default]\\n\\n[half]\\f[align,left]\
+      {}\\n\
+      \\n\
+      ■ 声質設定\\n\
+      {}\\n\
+      ■ 再生設定\\n\
+      \\![*]デフォルト音量(共通)\\n\
+    {}\
+      \\![*]句読点ごとに読み上げ(共通)\\n\
+    {}\
+      \\![*]改行で一拍おく(ゴースト別)\\n\
+    {}\
+      \\![*]読み上げに文章表示を合わせる(ゴースト別)\\n\
+    {}\
+      \\![*]デフォルト声質(共通)\\n\
+    {}\
+      \\n\
+      ■ エンジン設定 (起動中: {}/{})\
+      \\n\
       {}\
-      {}\\n\
-      {}\\n\
-      \\![*]デフォルト音量(共通)\\n    {}\
-      \\![*]句読点ごとに読み上げ(共通)\\n    {}\
-      \\![*]改行で一拍おく(ゴースト別)\\n    {}\
-      \\![*]セリフ表示を読み上げ音声に合わせる(ゴースト別)\\n    {}\
-      \\![*]デフォルト声質(共通)\\n    {}\
       \\n\\q[×,]\
       ",
     PLUGIN_NAME,
     env!("CARGO_PKG_VERSION"),
-    engine_status,
     ghost_name,
     characters_info,
     volume_changer,
@@ -307,9 +291,93 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     division_setting,
     sync_balloon_setting,
     default_voice_info,
+    running_count,
+    total_count,
+    engine_summary,
   );
 
   new_response_with_script(m.to_string(), true)
+}
+
+pub(crate) fn on_engine_status_menu(req: &PluginRequest) -> PluginResponse {
+  refresh_engine_status();
+
+  let refs = get_references(req);
+  let ghost_name = match refs.first() {
+    Some(name) => name.to_string(),
+    None => {
+      error!("Missing ghost name in references");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let path_for_arg = match refs.get(1) {
+    Some(path) => path.to_string(),
+    None => {
+      error!("Missing ghost path in references");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+
+  let speakers_info = match SPEAKERS_INFO.read() {
+    Ok(si) => si.clone(),
+    Err(e) => {
+      error!("Failed to read SPEAKERS_INFO: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
+
+  let engine_auto_start = match ENGINE_AUTO_START.read() {
+    Ok(eas) => eas.clone(),
+    Err(e) => {
+      error!("Failed to read ENGINE_AUTO_START: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
+
+  let mut engine_status = String::new();
+  for engine in ENGINE_LIST.iter() {
+    if speakers_info.contains_key(engine) {
+      engine_status += &format!("{}: {}", engine.name(), greened("起動中"),);
+    } else {
+      engine_status += &format!("{}: {}", engine.name(), grayed("停止中"),);
+    }
+    let is_auto_start_string: String;
+    if let Some(is_auto_start) = engine_auto_start.get(engine) {
+      if *is_auto_start {
+        is_auto_start_string = decorated(&ACTIVATED, "bold");
+      } else {
+        is_auto_start_string = decorated(&DEACTIVATED, "bold");
+      }
+      engine_status += &format!(
+        "\\_l[@0,]\\f[align,right]自動起動: \\__q[OnAutoStartToggled,{},{},{}]{}\\__q\\n",
+        engine.port(),
+        ghost_name,
+        path_for_arg,
+        is_auto_start_string,
+      );
+    } else {
+      engine_status += &format!(
+        "\\_l[@0,]\\f[align,right]自動起動: {}\\n",
+        grayed("設定未完了")
+      );
+    }
+  }
+
+  let m = format!(
+    "\
+    \\b[2]\\_q\
+    \\f[align,center]エンジン設定\\f[align,left]\\n\\n\
+    {}\
+    \\n\
+    \\__q[OnMenuExec,dummy,{},dummy,dummy,{}]{}\\__q\\n\
+    ",
+    engine_status,
+    ghost_name,
+    path_for_arg,
+    decorated("戻る", "bold"),
+  );
+
+  new_response_with_script(m, true)
 }
 
 fn chara_info(
@@ -922,7 +990,7 @@ pub(crate) fn on_auto_start_toggled(req: &PluginRequest) -> PluginResponse {
   });
 
   let script = format!(
-    "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+    "\\![raiseplugin,{},OnEngineStatusMenu,{},{}]",
     PLUGIN_UUID, ghost_name, path_for_arg
   );
   new_response_with_script(script, false)
