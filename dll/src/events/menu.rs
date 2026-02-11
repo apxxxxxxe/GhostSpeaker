@@ -7,7 +7,7 @@ use crate::variables::*;
 use crate::variables::{PLUGIN_NAME, PLUGIN_UUID};
 use ghost_speaker_common::{
   engine_from_port, CharacterVoice, Command, Engine, GhostVoiceInfo, Response, SpeakerInfo, Style,
-  ENGINE_LIST, NO_VOICE_UUID,
+  VoiceQuality, ENGINE_LIST, NO_VOICE_UUID,
 };
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -290,7 +290,7 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       {}\
       {}\\n\
       {}\\n\
-      \\![*]音量調整(共通)\\n    {}\
+      \\![*]デフォルト音量(共通)\\n    {}\
       \\![*]句読点ごとに読み上げ(共通)\\n    {}\
       \\![*]改行で一拍おく(ゴースト別)\\n    {}\
       \\![*]セリフ表示を読み上げ音声に合わせる(ゴースト別)\\n    {}\
@@ -332,7 +332,7 @@ fn chara_info(
     "".to_string()
   };
 
-  format!(
+  let mut result = format!(
     "{}{}\\n    \\__q[OnVoiceSelecting,{},{},{},{}]{}\\__q\\n",
     index_tag,
     character_name,
@@ -341,7 +341,29 @@ fn chara_info(
     index,
     ghost_path,
     decorated(&voice, "bold"),
-  )
+  );
+
+  // 声質が設定済み（NO_VOICE_UUIDでない）場合のみ音声調整リンクを表示
+  if let Some(info) = ghosts_voices.get(ghost_name) {
+    if let Some(Some(cv)) = info.voices.get(index) {
+      if cv.speaker_uuid != NO_VOICE_UUID {
+        let vq = &cv.voice_quality;
+        result.push_str(&format!(
+          "    \\__q[OnVoiceQualityMenu,{},{},{},{}]{}\\__q\\n",
+          ghost_name,
+          index,
+          ghost_path,
+          characters.get(index).unwrap_or(&String::from("")),
+          grayed(&format!(
+            "音声調整 [速:{:.2} 高:{:.2} 揚:{:.2} 量:{:.2}]",
+            vq.speed_scale, vq.pitch_scale, vq.intonation_scale, vq.volume_scale
+          )),
+        ));
+      }
+    }
+  }
+
+  result
 }
 
 fn get_voice_from_ghost(
@@ -554,6 +576,13 @@ pub(crate) fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
     }
   };
 
+  let global_volume = match VOLUME.read() {
+    Ok(v) => *v,
+    Err(e) => {
+      error!("Failed to read VOLUME: {}", e);
+      1.0
+    }
+  };
   let voice = CharacterVoice {
     port: match port.to_string().parse::<i32>() {
       Ok(p) => p,
@@ -569,6 +598,10 @@ pub(crate) fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
         error!("Failed to parse style_id in on_voice_selected: {}", e);
         return new_response_with_script(String::new(), false);
       }
+    },
+    voice_quality: VoiceQuality {
+      volume_scale: global_volume,
+      ..VoiceQuality::default()
     },
   };
 
@@ -751,6 +784,7 @@ pub(crate) fn on_default_voice_selected(req: &PluginRequest) -> PluginResponse {
         return new_response_with_script(String::new(), false);
       }
     },
+    voice_quality: VoiceQuality::default(),
   };
 
   match INITIAL_VOICE.write() {
@@ -969,6 +1003,262 @@ pub(crate) fn on_character_resized(req: &PluginRequest) -> PluginResponse {
   let script = format!(
     "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
     PLUGIN_UUID, ghost_name, ghost_path
+  );
+  new_response_with_script(script, false)
+}
+
+pub(crate) fn on_voice_quality_menu(req: &PluginRequest) -> PluginResponse {
+  let refs = get_references(req);
+  let ghost_name = match refs.first() {
+    Some(name) => name.to_string(),
+    None => {
+      error!("Missing ghost_name parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_index: usize = match refs.get(1).and_then(|s| s.parse().ok()) {
+    Some(i) => i,
+    None => {
+      error!("Missing or invalid character_index parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let ghost_path = match refs.get(2) {
+    Some(path) => path.to_string(),
+    None => {
+      error!("Missing ghost_path parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_name = refs.get(3).map(|s| s.to_string()).unwrap_or_default();
+
+  let ghosts_voices = match GHOSTS_VOICES.read() {
+    Ok(gv) => gv,
+    Err(e) => {
+      error!("Failed to read GHOSTS_VOICES: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let vq = match ghosts_voices
+    .get(&ghost_name)
+    .and_then(|info| info.voices.get(character_index))
+    .and_then(|v| v.as_ref())
+  {
+    Some(cv) => cv.voice_quality.clone(),
+    None => {
+      error!("Voice not found for quality menu");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let voice_name = get_voice_from_ghost(&ghost_name, character_index, &ghosts_voices);
+  drop(ghosts_voices);
+
+  // ghost_pathはrefsから受け取った値をそのまま使う（再エスケープしない）
+  // 既にon_menu_exec時点でエスケープ済みの状態で\\__q/raisepluginを通じて渡されている
+  let path_for_arg = ghost_path;
+
+  let mut m = format!(
+    "\\b[2]\\_q\\0 {}{} の音声調整\\n\\n",
+    character_name,
+    if character_name.is_empty() {
+      String::new()
+    } else {
+      format!(": {}", voice_name)
+    }
+  );
+
+  // 各パラメータの調整UI
+  let params: &[(&str, &str, f32, f32, f32, f32)] = &[
+    ("speed_scale", "話速", vq.speed_scale, 0.05, 0.50, 2.00),
+    ("pitch_scale", "音高", vq.pitch_scale, 0.02, -0.15, 0.15),
+    (
+      "intonation_scale",
+      "抑揚",
+      vq.intonation_scale,
+      0.05,
+      0.00,
+      2.00,
+    ),
+    ("volume_scale", "音量", vq.volume_scale, 0.05, 0.00, 2.00),
+  ];
+
+  for (param_name, label, value, step, min, max) in params {
+    m.push_str(&format!("\\![*]{} ({})\\n    ", label, param_name));
+    if *value > min + step / 2.0 {
+      m.push_str(&format!(
+        "\\__q[OnVoiceQualityChange,{},{},{},{},{},{}]{}\\__q",
+        ghost_name,
+        character_index,
+        param_name,
+        -step,
+        path_for_arg,
+        character_name,
+        decorated("<<", "bold"),
+      ));
+    }
+    m.push_str(&format!(" {:.2} ", value));
+    if *value < max - step / 2.0 {
+      m.push_str(&format!(
+        "\\__q[OnVoiceQualityChange,{},{},{},{},{},{}]{}\\__q",
+        ghost_name,
+        character_index,
+        param_name,
+        step,
+        path_for_arg,
+        character_name,
+        decorated(">>", "bold"),
+      ));
+    }
+    m.push_str("\\n");
+  }
+
+  m.push_str(&format!(
+    "\\n\\__q[OnVoiceQualityReset,{},{},{},{}]{}\\__q",
+    ghost_name,
+    character_index,
+    path_for_arg,
+    character_name,
+    decorated("リセット", "bold"),
+  ));
+  m.push_str(&format!(
+    "  \\__q[OnMenuExec,dummy,{},dummy,dummy,{}]{}\\__q\\n",
+    ghost_name,
+    path_for_arg,
+    decorated("戻る", "bold"),
+  ));
+
+  new_response_with_script(m, true)
+}
+
+pub(crate) fn on_voice_quality_change(req: &PluginRequest) -> PluginResponse {
+  let refs = get_references(req);
+  let ghost_name = match refs.first() {
+    Some(name) => name.to_string(),
+    None => {
+      error!("Missing ghost_name parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_index: usize = match refs.get(1).and_then(|s| s.parse().ok()) {
+    Some(i) => i,
+    None => {
+      error!("Missing or invalid character_index parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let param_name = match refs.get(2) {
+    Some(name) => name.to_string(),
+    None => {
+      error!("Missing param_name parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let delta: f32 = match refs.get(3).and_then(|s| s.parse().ok()) {
+    Some(d) => d,
+    None => {
+      error!("Missing or invalid delta parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let ghost_path = match refs.get(4) {
+    Some(path) => path.to_string(),
+    None => {
+      error!("Missing ghost_path parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_name = refs.get(5).map(|s| s.to_string()).unwrap_or_default();
+
+  let mut ghosts_voices = match GHOSTS_VOICES.write() {
+    Ok(gv) => gv,
+    Err(e) => {
+      error!("Failed to write GHOSTS_VOICES: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  if let Some(info) = ghosts_voices.get_mut(&ghost_name) {
+    if let Some(Some(cv)) = info.voices.get_mut(character_index) {
+      let vq = &mut cv.voice_quality;
+      match param_name.as_str() {
+        "speed_scale" => vq.speed_scale = (vq.speed_scale + delta).clamp(0.50, 2.00),
+        "pitch_scale" => vq.pitch_scale = (vq.pitch_scale + delta).clamp(-0.15, 0.15),
+        "intonation_scale" => {
+          vq.intonation_scale = (vq.intonation_scale + delta).clamp(0.00, 2.00)
+        }
+        "volume_scale" => vq.volume_scale = (vq.volume_scale + delta).clamp(0.00, 2.00),
+        _ => {
+          error!("Unknown voice quality parameter: {}", param_name);
+        }
+      }
+    }
+    let info_clone = info.clone();
+    drop(ghosts_voices);
+    send_command_logged(&Command::UpdateGhostVoices {
+      ghost_name: ghost_name.clone(),
+      info: info_clone,
+    });
+  } else {
+    drop(ghosts_voices);
+  }
+
+  // refsから受け取ったパスをそのまま渡す（再エスケープしない）
+  let script = format!(
+    "\\![raiseplugin,{},OnVoiceQualityMenu,{},{},{},{}]",
+    PLUGIN_UUID, ghost_name, character_index, ghost_path, character_name,
+  );
+  new_response_with_script(script, false)
+}
+
+pub(crate) fn on_voice_quality_reset(req: &PluginRequest) -> PluginResponse {
+  let refs = get_references(req);
+  let ghost_name = match refs.first() {
+    Some(name) => name.to_string(),
+    None => {
+      error!("Missing ghost_name parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_index: usize = match refs.get(1).and_then(|s| s.parse().ok()) {
+    Some(i) => i,
+    None => {
+      error!("Missing or invalid character_index parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let ghost_path = match refs.get(2) {
+    Some(path) => path.to_string(),
+    None => {
+      error!("Missing ghost_path parameter");
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  let character_name = refs.get(3).map(|s| s.to_string()).unwrap_or_default();
+
+  let mut ghosts_voices = match GHOSTS_VOICES.write() {
+    Ok(gv) => gv,
+    Err(e) => {
+      error!("Failed to write GHOSTS_VOICES: {}", e);
+      return new_response_with_script(String::new(), false);
+    }
+  };
+  if let Some(info) = ghosts_voices.get_mut(&ghost_name) {
+    if let Some(Some(cv)) = info.voices.get_mut(character_index) {
+      cv.voice_quality = VoiceQuality::default();
+    }
+    let info_clone = info.clone();
+    drop(ghosts_voices);
+    send_command_logged(&Command::UpdateGhostVoices {
+      ghost_name: ghost_name.clone(),
+      info: info_clone,
+    });
+  } else {
+    drop(ghosts_voices);
+  }
+
+  // refsから受け取ったパスをそのまま渡す（再エスケープしない）
+  let script = format!(
+    "\\![raiseplugin,{},OnVoiceQualityMenu,{},{},{},{}]",
+    PLUGIN_UUID, ghost_name, character_index, ghost_path, character_name,
   );
   new_response_with_script(script, false)
 }

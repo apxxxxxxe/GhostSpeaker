@@ -373,17 +373,17 @@ fn handle_sync_start(text: String, ghost_name: String, state: &mut WorkerState) 
     match wav_result {
       Ok(wav) => {
         // 最初のセグメントを再生開始
-        spawn_sync_playback(wav, handle);
+        spawn_sync_playback(wav, first.volume, handle);
       }
       Err(e) => {
         error!("First segment predict failed: {}", e);
         // 空のwavで再生開始（すぐ完了する）
-        spawn_sync_playback(Vec::new(), handle);
+        spawn_sync_playback(Vec::new(), first.volume, handle);
       }
     }
   } else {
     // 省略記号/空テキストセグメント: 空のwavで再生開始
-    spawn_sync_playback(Vec::new(), handle);
+    spawn_sync_playback(Vec::new(), first.volume, handle);
   }
 
   // 残りのセグメントをバックグラウンドで合成
@@ -437,7 +437,7 @@ fn handle_sync_poll(state: &mut WorkerState) -> Response {
 
       // 省略記号セグメントと空テキストセグメント（quicksection由来）は音声再生なし
       if !segment_info.is_ellipsis && !seg.text.is_empty() {
-        spawn_sync_playback(seg.wav, handle);
+        spawn_sync_playback(seg.wav, seg.volume, handle);
       }
 
       // 最後のセグメント → ステートクリア

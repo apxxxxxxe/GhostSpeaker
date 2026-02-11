@@ -60,11 +60,40 @@ pub fn engine_from_port(port: i32) -> Option<Engine> {
   ENGINE_LIST.iter().find(|e| e.port() == port).copied()
 }
 
+fn default_one() -> f32 {
+  1.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceQuality {
+  #[serde(default = "default_one")]
+  pub speed_scale: f32,
+  #[serde(default)]
+  pub pitch_scale: f32,
+  #[serde(default = "default_one")]
+  pub intonation_scale: f32,
+  #[serde(default = "default_one")]
+  pub volume_scale: f32,
+}
+
+impl Default for VoiceQuality {
+  fn default() -> Self {
+    Self {
+      speed_scale: 1.0,
+      pitch_scale: 0.0,
+      intonation_scale: 1.0,
+      volume_scale: 1.0,
+    }
+  }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterVoice {
   pub port: i32,
   pub speaker_uuid: String,
   pub style_id: i32,
+  #[serde(default)]
+  pub voice_quality: VoiceQuality,
 }
 
 impl Default for CharacterVoice {
@@ -79,6 +108,7 @@ impl CharacterVoice {
       port: Engine::VoiceVox.port(),
       speaker_uuid: NO_VOICE_UUID.to_string(),
       style_id: -1,
+      voice_quality: VoiceQuality::default(),
     }
   }
 }

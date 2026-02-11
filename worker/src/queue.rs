@@ -54,7 +54,8 @@ pub static GRACEFUL_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 static PREDICT_QUEUE: Lazy<StdMutex<VecDeque<(String, String)>>> =
   Lazy::new(|| StdMutex::new(VecDeque::new()));
 static PREDICT_STOPPER: AtomicBool = AtomicBool::new(false);
-static PLAY_QUEUE: Lazy<StdMutex<VecDeque<Vec<u8>>>> = Lazy::new(|| StdMutex::new(VecDeque::new()));
+static PLAY_QUEUE: Lazy<StdMutex<VecDeque<(Vec<u8>, f32)>>> =
+  Lazy::new(|| StdMutex::new(VecDeque::new()));
 static PLAY_STOPPER: AtomicBool = AtomicBool::new(false);
 static SPEAK_QUEUE_STOPPER: AtomicBool = AtomicBool::new(false);
 
@@ -72,6 +73,7 @@ pub struct SyncSegment {
   pub raw_text: String,
   pub scope: usize,
   pub predictor: Box<dyn Predictor + Send + Sync>,
+  pub volume: f32,
 }
 
 pub struct SyncReadySegment {
@@ -79,6 +81,7 @@ pub struct SyncReadySegment {
   pub raw_text: String,
   pub scope: usize,
   pub wav: Vec<u8>,
+  pub volume: f32,
 }
 
 pub struct SyncPlaybackState {
@@ -267,7 +270,7 @@ fn init_predict_queue(handle: &tokio::runtime::Handle) {
           match args_to_predictors(parg).await {
             None => continue,
             Some(predictors) => {
-              for predictor in predictors {
+              for (predictor, volume) in predictors {
                 let wav_result: Result<Vec<u8>, String> =
                   predictor.predict().await.map_err(|e| e.to_string());
                 match wav_result {
@@ -276,7 +279,7 @@ fn init_predict_queue(handle: &tokio::runtime::Handle) {
                     PLAY_QUEUE
                       .lock()
                       .unwrap_or_else(|e| e.into_inner())
-                      .push_back(res);
+                      .push_back((res, volume));
                     debug!("pushed to play");
                   }
                   Err(e) => {
@@ -326,11 +329,10 @@ fn init_play_queue(handle: &tokio::runtime::Handle) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .pop_front();
-      if let Some(data) = wav {
+      if let Some((data, volume)) = wav {
         if !data.is_empty() {
           last_activity = Instant::now();
           debug!("{}", format!("play: {}", data.len()));
-          let volume = VOLUME.read().map(|v| *v).unwrap_or(1.0);
           match tokio::task::spawn_blocking(move || {
             play_wav(data, volume).map_err(|e| e.to_string())
           })
@@ -591,7 +593,7 @@ pub fn push_to_prediction(text: String, ghost_name: String) {
 
 async fn args_to_predictors(
   args: (String, String),
-) -> Option<VecDeque<Box<dyn Predictor + Send + Sync>>> {
+) -> Option<VecDeque<(Box<dyn Predictor + Send + Sync>, f32)>> {
   let (text, ghost_name) = args;
   build_segments_async(text, ghost_name, false)
     .await
@@ -599,7 +601,7 @@ async fn args_to_predictors(
       segments
         .into_iter()
         .filter(|seg| !is_ellipsis_segment(&seg.text))
-        .map(|seg| seg.predictor)
+        .map(|seg| (seg.predictor, seg.volume))
         .collect()
     })
 }
@@ -699,6 +701,7 @@ async fn build_segments_async(
     if speaker.speaker_uuid == NO_VOICE_UUID {
       continue;
     }
+    let char_volume = speaker.voice_quality.volume_scale;
     let voice_not_found = {
       let engine = match engine_from_port(speaker.port) {
         Some(e) => e,
@@ -750,6 +753,7 @@ async fn build_segments_async(
             raw_text: rt,
             scope: dialog.scope,
             predictor: Box::new(NoOpPredictor),
+            volume: char_volume,
           });
         }
         continue;
@@ -760,6 +764,7 @@ async fn build_segments_async(
           raw_text: rt,
           scope: dialog.scope,
           predictor: Box::new(NoOpPredictor),
+          volume: char_volume,
         });
         continue;
       }
@@ -783,6 +788,7 @@ async fn build_segments_async(
           engine,
           t.clone(),
           speaker.style_id,
+          speaker.voice_quality.clone(),
         )),
       };
       segments.push(SyncSegment {
@@ -790,6 +796,7 @@ async fn build_segments_async(
         raw_text: rt,
         scope: dialog.scope,
         predictor,
+        volume: char_volume,
       });
     }
   }
@@ -808,14 +815,13 @@ pub fn build_segments(
 
 // --- 同期再生 ---
 
-pub fn spawn_sync_playback(wav: Vec<u8>, handle: &tokio::runtime::Handle) {
+pub fn spawn_sync_playback(wav: Vec<u8>, volume: f32, handle: &tokio::runtime::Handle) {
   if SHUTTING_DOWN.load(Ordering::Acquire) {
     return;
   }
   let gen = SYNC_AUDIO_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
   // cancel_sync_playback で設定された FORCE_STOP_SINK をリセット
   crate::player::FORCE_STOP_SINK.store(false, Ordering::Release);
-  let volume = VOLUME.read().map(|v| *v).unwrap_or(1.0);
   let task_handle = handle.spawn(async move {
     if !wav.is_empty() {
       match tokio::task::spawn_blocking(move || {
@@ -930,6 +936,7 @@ pub fn spawn_sync_prediction(
                 raw_text: segment.raw_text,
                 scope: segment.scope,
                 wav,
+                volume: segment.volume,
               });
             } else {
               return; // キャンセルされた
