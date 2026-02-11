@@ -3,7 +3,6 @@ use log::{debug, error};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Child, Stdio};
 use std::sync::Mutex;
-use std::time::Duration;
 
 struct WorkerConnection {
   child: Child,
@@ -143,39 +142,17 @@ fn try_respawn_worker() {
 }
 
 pub(crate) fn shutdown_worker() -> Result<(), String> {
-  // Send shutdown command
-  let _ = send_command(&Command::Shutdown);
+  // GracefulShutdown コマンドを送信
+  let _ = send_command(&Command::GracefulShutdown);
 
+  // ワーカー接続をドロップ（パイプを閉じる）
+  // ワーカーの終了を待たない → detach
   let mut guard = WORKER
     .lock()
     .map_err(|e| format!("Failed to lock WORKER: {}", e))?;
-
-  if let Some(mut conn) = guard.take() {
-    // Wait for process to exit with timeout
-    let start = std::time::Instant::now();
-    let timeout = Duration::from_secs(5);
-    loop {
-      match conn.child.try_wait() {
-        Ok(Some(_)) => {
-          debug!("Worker exited gracefully");
-          return Ok(());
-        }
-        Ok(None) => {
-          if start.elapsed() >= timeout {
-            debug!("Worker did not exit in time, killing...");
-            let _ = conn.child.kill();
-            let _ = conn.child.wait();
-            return Ok(());
-          }
-          std::thread::sleep(Duration::from_millis(100));
-        }
-        Err(e) => {
-          error!("Error waiting for worker: {}", e);
-          let _ = conn.child.kill();
-          return Err(format!("Error waiting for worker: {}", e));
-        }
-      }
-    }
+  if let Some(conn) = guard.take() {
+    drop(conn); // パイプクローズ、プロセスハンドル解放
+    debug!("Worker detached for graceful shutdown");
   }
 
   Ok(())

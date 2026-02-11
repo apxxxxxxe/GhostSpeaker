@@ -49,6 +49,7 @@ pub static INITIAL_VOICE: Lazy<RwLock<CharacterVoice>> =
   Lazy::new(|| RwLock::new(CharacterVoice::no_voice()));
 
 pub static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+pub static GRACEFUL_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 static PREDICT_QUEUE: Lazy<StdMutex<VecDeque<(String, String)>>> =
   Lazy::new(|| StdMutex::new(VecDeque::new()));
@@ -331,7 +332,7 @@ fn init_play_queue(handle: &tokio::runtime::Handle) {
           debug!("{}", format!("play: {}", data.len()));
           let volume = VOLUME.read().map(|v| *v).unwrap_or(1.0);
           match tokio::task::spawn_blocking(move || {
-            play_wav(data, volume, &SHUTTING_DOWN).map_err(|e| e.to_string())
+            play_wav(data, volume).map_err(|e| e.to_string())
           })
           .await
           {
@@ -481,6 +482,99 @@ pub fn stop_queues() {
   crate::engine::shutdown_http_client();
 
   debug!("stopped queues");
+}
+
+pub fn graceful_stop_queues() {
+  debug!("graceful stopping queues");
+  GRACEFUL_SHUTDOWN.store(true, Ordering::Release);
+  SHUTTING_DOWN.store(true, Ordering::Release);
+
+  // 同期再生ステートをクリア
+  match SYNC_STATE.lock() {
+    Ok(mut s) => *s = None,
+    Err(e) => error!("Failed to lock SYNC_STATE during graceful shutdown: {}", e),
+  }
+
+  // FORCE_STOP_SINK は設定しない（音声再生を継続）
+
+  // キューストッパー設定（各キューは空になったら自然終了）
+  PREDICT_STOPPER.store(true, Ordering::Release);
+  PLAY_STOPPER.store(true, Ordering::Release);
+  SPEAK_QUEUE_STOPPER.store(true, Ordering::Release);
+
+  // 同期ハンドラをabort（OnCloseは非同期モードなので影響なし）
+  for (name, handler_mutex) in [
+    ("sync_prediction", &*SYNC_PREDICTION_HANDLER),
+    ("sync_playback", &*SYNC_PLAYBACK_HANDLER),
+  ] {
+    if let Ok(mut h) = handler_mutex.lock() {
+      if let Some(handle) = h.take() {
+        if !handle.is_finished() {
+          handle.abort();
+          warn!("Aborted {} handler during graceful shutdown", name);
+        }
+      }
+    }
+  }
+
+  debug!("graceful stop queues setup complete");
+}
+
+pub fn wait_for_playback_drain(timeout: Duration) {
+  let start = Instant::now();
+  while start.elapsed() < timeout {
+    let predict_done = PREDICT_HANDLER
+      .lock()
+      .unwrap_or_else(|e| e.into_inner())
+      .as_ref()
+      .is_none_or(|h| h.is_finished());
+    let play_done = PLAY_HANDLER
+      .lock()
+      .unwrap_or_else(|e| e.into_inner())
+      .as_ref()
+      .is_none_or(|h| h.is_finished());
+
+    if predict_done && play_done {
+      debug!("all playback drained");
+      break;
+    }
+
+    std::thread::sleep(Duration::from_millis(200));
+  }
+
+  // クリーンアップ
+  for (name, handler_mutex) in [
+    ("play", &*PLAY_HANDLER),
+    ("predict", &*PREDICT_HANDLER),
+    ("speak", &*SPEAK_HANDLER),
+  ] {
+    if let Ok(mut h) = handler_mutex.lock() {
+      if let Some(handle) = h.take() {
+        if !handle.is_finished() {
+          handle.abort();
+          warn!("Aborted {} handler during drain cleanup", name);
+        }
+      }
+    }
+  }
+
+  // キューに残留したデータをクリア
+  PREDICT_QUEUE
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clear();
+  PLAY_QUEUE.lock().unwrap_or_else(|e| e.into_inner()).clear();
+  CONNECTION_DIALOGS
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clear();
+
+  crate::system::cleanup_system_cache();
+
+  // HTTPクライアントを明示的にドロップ
+  crate::engine::shutdown_http_client();
+
+  debug!("playback drain complete");
 }
 
 // --- 非同期読み上げ ---
@@ -725,7 +819,7 @@ pub fn spawn_sync_playback(wav: Vec<u8>, handle: &tokio::runtime::Handle) {
   let task_handle = handle.spawn(async move {
     if !wav.is_empty() {
       match tokio::task::spawn_blocking(move || {
-        play_wav(wav, volume, &SHUTTING_DOWN).map_err(|e| e.to_string())
+        play_wav(wav, volume).map_err(|e| e.to_string())
       })
       .await
       {

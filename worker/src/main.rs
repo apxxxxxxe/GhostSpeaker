@@ -9,6 +9,7 @@ use log::{debug, error, info};
 use simplelog::{Config, LevelFilter, WriteLogger};
 use std::io::{BufRead, Write};
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use crate::format::is_ellipsis_segment;
 use crate::queue::{
@@ -176,6 +177,12 @@ fn main() {
   }
 
   info!("Worker shutting down");
+
+  if queue::GRACEFUL_SHUTDOWN.load(Ordering::Acquire) {
+    info!("Waiting for playback to drain...");
+    queue::wait_for_playback_drain(Duration::from_secs(60));
+  }
+
   // ランタイムを正常にシャットダウン（dropによる暗黙のシャットダウン）
   drop(runtime);
   info!("Worker shutdown complete");
@@ -294,6 +301,12 @@ fn handle_command(cmd: Command, state: &mut WorkerState) -> Response {
       player::FORCE_STOP_SINK.store(true, Ordering::Release);
       cancel_sync_playback();
       state.sync_ghost_name = None;
+      Response::Ok
+    }
+
+    Command::GracefulShutdown => {
+      debug!("GracefulShutdown command received");
+      queue::graceful_stop_queues();
       Response::Ok
     }
   }

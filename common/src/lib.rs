@@ -170,6 +170,7 @@ pub enum Command {
     engine: Engine,
   },
   ForceStopPlayback,
+  GracefulShutdown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -13,7 +13,6 @@ pub static FORCE_STOP_SINK: AtomicBool = AtomicBool::new(false);
 pub fn play_wav(
   wav: Vec<u8>,
   volume: f32,
-  shutting_down: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error>> {
   let (_stream, handle) = OutputStream::try_default()?;
   let sink = Sink::try_new(&handle)?;
@@ -36,12 +35,6 @@ pub fn play_wav(
     }
 
     std::thread::sleep(std::time::Duration::from_millis(50));
-    // シャットダウンチェック
-    if shutting_down.load(Ordering::Acquire) {
-      sink.pause();
-      sink.stop();
-      return Ok(());
-    }
     if FORCE_STOP_SINK.load(Ordering::Acquire) {
       sink.pause();
       sink.stop();
