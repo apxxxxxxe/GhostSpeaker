@@ -1139,7 +1139,7 @@ pub(crate) fn on_voice_quality_menu(req: &PluginRequest) -> PluginResponse {
   // 各パラメータの調整UI
   let params: &[(&str, &str, f32, f32, f32, f32)] = &[
     ("speed_scale", "話速", vq.speed_scale, 0.05, 0.50, 2.00),
-    ("pitch_scale", "音高", vq.pitch_scale, 0.02, -0.15, 0.15),
+    ("pitch_scale", "音高", vq.pitch_scale, 0.01, -0.15, 0.15),
     (
       "intonation_scale",
       "抑揚",
