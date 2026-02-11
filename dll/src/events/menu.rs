@@ -524,10 +524,16 @@ fn list_available_voices(callbacks: (ListCallback, DummyCallback)) -> String {
     Ok(si) => si,
     Err(_) => return m,
   };
-  for (engine, speakers) in speakers_info.iter() {
-    for speaker in speakers.iter() {
-      for style in speaker.styles.iter() {
-        m.push_str(callbacks.0(engine, speaker, style).as_str());
+  for engine in ENGINE_LIST.iter() {
+    if let Some(speakers) = speakers_info.get(engine) {
+      if speakers.is_empty() {
+        continue;
+      }
+      m.push_str(&format!("\\n■ {}\\n", engine.name()));
+      for speaker in speakers.iter() {
+        for style in speaker.styles.iter() {
+          m.push_str(callbacks.0(engine, speaker, style).as_str());
+        }
       }
     }
   }
@@ -610,7 +616,7 @@ pub(crate) fn on_voice_selecting(req: &PluginRequest) -> PluginResponse {
     character_index,
     ghost_path.to_string(),
   );
-  let mut m = format!("\\C\\c\\b[2]\\_q{}\\n{}\\n", ghost_name, character_name);
+  let mut m = format!("\\C\\c\\b[2]\\_q{}\\n{}\\n\\n", ghost_name, character_name);
   m.push_str(list_available_voices(callback).as_str());
   m.push_str("\\n\\q[×,]");
   new_response_with_script(m.to_string(), true)
@@ -801,7 +807,7 @@ pub(crate) fn on_default_voice_selecting(req: &PluginRequest) -> PluginResponse 
     }
   };
   let callback = list_callback_for_defaultvoices(ghost_name.to_string(), ghost_path.to_string());
-  let mut m = "\\_qデフォルトボイスの設定\\n".to_string();
+  let mut m = "\\_qデフォルトボイスの設定\\n\\n".to_string();
   m.push_str(list_available_voices(callback).as_str());
   m.push_str("\\n\\q[×,]");
   new_response_with_script(m.to_string(), true)

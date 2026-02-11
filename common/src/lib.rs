@@ -44,9 +44,9 @@ impl Engine {
 }
 
 pub const ENGINE_LIST: &[Engine] = &[
+  Engine::VoiceVox,
   Engine::CoeiroInkV2,
   Engine::CoeiroInkV1,
-  Engine::VoiceVox,
   Engine::Lmroid,
   Engine::ShareVox,
   Engine::ItVoice,
