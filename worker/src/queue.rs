@@ -606,6 +606,29 @@ async fn args_to_predictors(
     })
 }
 
+/// 同期モード用: 末尾の省略記号セグメントを直前のセグメントにマージする。
+/// 先頭の省略記号や、スコープが異なるセグメントはマージしない。
+fn merge_trailing_ellipsis_segments(segments: Vec<SyncSegment>) -> Vec<SyncSegment> {
+  if segments.len() < 2 {
+    return segments;
+  }
+  let mut result: Vec<SyncSegment> = Vec::with_capacity(segments.len());
+  for seg in segments {
+    let should_merge = is_ellipsis_segment(&seg.text)
+      && result.last().map_or(false, |prev: &SyncSegment| {
+        prev.scope == seg.scope && !prev.text.is_empty() && !is_ellipsis_segment(&prev.text)
+      });
+    if should_merge {
+      let prev = result.last_mut().unwrap();
+      prev.text.push_str(&seg.text);
+      prev.raw_text.push_str(&seg.raw_text);
+    } else {
+      result.push(seg);
+    }
+  }
+  result
+}
+
 async fn build_segments_async(
   text: String,
   ghost_name: String,
@@ -800,6 +823,10 @@ async fn build_segments_async(
       });
     }
   }
+  // 同期モード: 末尾の省略記号セグメントを直前のセグメントにマージ
+  if sync_mode {
+    segments = merge_trailing_ellipsis_segments(segments);
+  }
   Some(segments)
 }
 
@@ -982,5 +1009,115 @@ pub fn pop_ready_segment(ghost_name: &str) -> (Option<SyncReadySegment>, bool) {
       error!("Failed to lock SYNC_STATE in pop_ready_segment: {}", e);
       (None, false)
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::engine::NoOpPredictor;
+
+  /// テスト用SyncSegmentを簡易作成
+  fn make_seg(text: &str, raw_text: &str, scope: usize) -> SyncSegment {
+    SyncSegment {
+      text: text.to_string(),
+      raw_text: raw_text.to_string(),
+      scope,
+      predictor: Box::new(NoOpPredictor),
+      volume: 1.0,
+    }
+  }
+
+  #[test]
+  fn merge_trailing_ellipsis_basic() {
+    let segments = vec![make_seg("テスト", "テスト", 0), make_seg("……", "……", 0)];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].text, "テスト……");
+  }
+
+  #[test]
+  fn merge_trailing_ellipsis_raw_text() {
+    let segments = vec![
+      make_seg("テスト", "テスト_raw", 0),
+      make_seg("……", "……_raw", 0),
+    ];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].text, "テスト……");
+    assert_eq!(result[0].raw_text, "テスト_raw……_raw");
+  }
+
+  #[test]
+  fn merge_leading_ellipsis_preserved() {
+    let segments = vec![make_seg("……", "……", 0), make_seg("テスト", "テスト", 0)];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].text, "……");
+    assert_eq!(result[1].text, "テスト");
+  }
+
+  #[test]
+  fn merge_different_scope_preserved() {
+    let segments = vec![make_seg("テスト", "テスト", 0), make_seg("……", "……", 1)];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 2);
+  }
+
+  #[test]
+  fn merge_ellipsis_between_text() {
+    let segments = vec![
+      make_seg("テスト", "テスト", 0),
+      make_seg("……", "……", 0),
+      make_seg("続き", "続き", 0),
+    ];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].text, "テスト……");
+    assert_eq!(result[1].text, "続き");
+  }
+
+  #[test]
+  fn merge_consecutive_trailing_ellipsis() {
+    let segments = vec![
+      make_seg("テスト", "テスト", 0),
+      make_seg("……", "……", 0),
+      make_seg("……", "……", 0),
+    ];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].text, "テスト…………");
+  }
+
+  #[test]
+  fn merge_empty_predecessor_preserved() {
+    let segments = vec![make_seg("", "", 0), make_seg("……", "……", 0)];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 2);
+  }
+
+  #[test]
+  fn merge_single_segment_unchanged() {
+    let segments = vec![make_seg("……", "……", 0)];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].text, "……");
+  }
+
+  #[test]
+  fn merge_no_ellipsis_unchanged() {
+    let segments = vec![make_seg("テスト", "テスト", 0), make_seg("続き", "続き", 0)];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].text, "テスト");
+    assert_eq!(result[1].text, "続き");
+  }
+
+  #[test]
+  fn merge_dot_ellipsis() {
+    let segments = vec![make_seg("テスト", "テスト", 0), make_seg("・・", "・・", 0)];
+    let result = merge_trailing_ellipsis_segments(segments);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].text, "テスト・・");
   }
 }
