@@ -16,7 +16,13 @@ jobs:
       uses: actions/checkout@v4
     - name: Zip output
       run: |
-        zip -r release.zip * -x .git/\* -x .github/\* -x release.zip -x Cargo\* -x src/\* -x md5buildignore.txt
+        mkdir -p /tmp/nar_temp
+        rsync -av --filter=':- md5buildignore.txt' . /tmp/nar_temp/
+        echo "=== Files to be included in NAR ==="
+        find /tmp/nar_temp -type f | sort
+        echo "==================================="
+        cd /tmp/nar_temp
+        zip -r $GITHUB_WORKSPACE/${{ env.NAR_NAME }}.nar *
     - name: Create release
       id: create_release
       uses: actions/create-release@v1.0.0
