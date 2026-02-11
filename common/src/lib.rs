@@ -230,6 +230,7 @@ pub enum Response {
     speakers_info: HashMap<Engine, Vec<SpeakerInfo>>,
     connection_status: HashMap<Engine, bool>,
     engine_paths: HashMap<Engine, String>,
+    engine_auto_start: HashMap<Engine, bool>,
   },
 }
 

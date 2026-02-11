@@ -60,6 +60,7 @@ fn refresh_engine_status() {
     speakers_info,
     connection_status,
     engine_paths,
+    engine_auto_start,
   }) = send_command_logged(&Command::GetEngineStatus)
   {
     if let Ok(mut si) = SPEAKERS_INFO.write() {
@@ -70,6 +71,9 @@ fn refresh_engine_status() {
     }
     if let Ok(mut ep) = ENGINE_PATH.write() {
       *ep = engine_paths;
+    }
+    if let Ok(mut ea) = ENGINE_AUTO_START.write() {
+      *ea = engine_auto_start;
     }
   }
 }

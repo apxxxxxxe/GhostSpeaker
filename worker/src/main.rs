@@ -245,10 +245,15 @@ fn handle_command(cmd: Command, state: &mut WorkerState) -> Response {
         .map(|cs| cs.clone())
         .unwrap_or_default();
       let engine_paths = ENGINE_PATH.read().map(|ep| ep.clone()).unwrap_or_default();
+      let engine_auto_start = ENGINE_AUTO_START
+        .read()
+        .map(|ea| ea.clone())
+        .unwrap_or_default();
       Response::EngineStatus {
         speakers_info,
         connection_status,
         engine_paths,
+        engine_auto_start,
       }
     }
 
