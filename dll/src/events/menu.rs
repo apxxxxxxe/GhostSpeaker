@@ -423,8 +423,8 @@ fn chara_info(
           ghost_path,
           characters.get(index).unwrap_or(&String::from("")),
           grayed(&format!(
-            "音声調整 [速:{:.2} 高:{:.2} 揚:{:.2} 量:{:.2}]",
-            vq.speed_scale, vq.pitch_scale, vq.intonation_scale, vq.volume_scale
+            "音声調整 [速:{:.2} 高:{:.2} 揚:{:.2}]",
+            vq.speed_scale, vq.pitch_scale, vq.intonation_scale
           )),
         ));
       }
@@ -644,13 +644,6 @@ pub(crate) fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
     }
   };
 
-  let global_volume = match VOLUME.read() {
-    Ok(v) => *v,
-    Err(e) => {
-      error!("Failed to read VOLUME: {}", e);
-      1.0
-    }
-  };
   let voice = CharacterVoice {
     port: match port.to_string().parse::<i32>() {
       Ok(p) => p,
@@ -667,10 +660,7 @@ pub(crate) fn on_voice_selected(req: &PluginRequest) -> PluginResponse {
         return new_response_with_script(String::new(), false);
       }
     },
-    voice_quality: VoiceQuality {
-      volume_scale: global_volume,
-      ..VoiceQuality::default()
-    },
+    voice_quality: VoiceQuality::default(),
   };
 
   let ghost_name_str = ghost_name.to_string();
@@ -1147,7 +1137,6 @@ pub(crate) fn on_voice_quality_menu(req: &PluginRequest) -> PluginResponse {
       0.00,
       2.00,
     ),
-    ("volume_scale", "音量", vq.volume_scale, 0.05, 0.00, 2.00),
   ];
 
   for (param_name, label, value, step, min, max) in params {
@@ -1253,7 +1242,6 @@ pub(crate) fn on_voice_quality_change(req: &PluginRequest) -> PluginResponse {
         "intonation_scale" => {
           vq.intonation_scale = (vq.intonation_scale + delta).clamp(0.00, 2.00)
         }
-        "volume_scale" => vq.volume_scale = (vq.volume_scale + delta).clamp(0.00, 2.00),
         _ => {
           error!("Unknown voice quality parameter: {}", param_name);
         }

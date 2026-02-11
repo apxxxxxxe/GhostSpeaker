@@ -72,8 +72,6 @@ pub struct VoiceQuality {
   pub pitch_scale: f32,
   #[serde(default = "default_one")]
   pub intonation_scale: f32,
-  #[serde(default = "default_one")]
-  pub volume_scale: f32,
 }
 
 impl Default for VoiceQuality {
@@ -82,7 +80,6 @@ impl Default for VoiceQuality {
       speed_scale: 1.0,
       pitch_scale: 0.0,
       intonation_scale: 1.0,
-      volume_scale: 1.0,
     }
   }
 }

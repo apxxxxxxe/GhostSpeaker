@@ -724,7 +724,7 @@ async fn build_segments_async(
     if speaker.speaker_uuid == NO_VOICE_UUID {
       continue;
     }
-    let char_volume = speaker.voice_quality.volume_scale;
+    let play_volume = volume;
     let voice_not_found = {
       let engine = match engine_from_port(speaker.port) {
         Some(e) => e,
@@ -776,7 +776,7 @@ async fn build_segments_async(
             raw_text: rt,
             scope: dialog.scope,
             predictor: Box::new(NoOpPredictor),
-            volume: char_volume,
+            volume: play_volume,
           });
         }
         continue;
@@ -787,7 +787,7 @@ async fn build_segments_async(
           raw_text: rt,
           scope: dialog.scope,
           predictor: Box::new(NoOpPredictor),
-          volume: char_volume,
+          volume: play_volume,
         });
         continue;
       }
@@ -819,7 +819,7 @@ async fn build_segments_async(
         raw_text: rt,
         scope: dialog.scope,
         predictor,
-        volume: char_volume,
+        volume: play_volume,
       });
     }
   }
