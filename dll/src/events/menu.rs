@@ -261,10 +261,15 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     },
   );
 
+  let menu_script = format!(
+    "\\![raiseplugin,{},OnMenuExec,dummy,{},dummy,dummy,{}]",
+    PLUGIN_UUID, ghost_name, path_for_arg,
+  );
+
   let m = format!(
     "\
       \\b[2]\\_q\
-      \\f[align,center]\\f[size,12]{} v{}\\f[size,default]\\n\\n[half]\\f[align,left]\
+      \\f[align,center]\\f[size,12]{} v{} (\\f[underline,true]\\q[Readme,\"script:\\![open,readme,plugin,{}]{}\"]\\f[underline,false])\\f[size,default]\\n\\n[half]\\f[align,left]\
       {}\\n\
       \\n\
       ■ 声質設定\\n\
@@ -288,6 +293,8 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       ",
     PLUGIN_NAME,
     env!("CARGO_PKG_VERSION"),
+    PLUGIN_NAME,
+    menu_script,
     ghost_name,
     characters_info,
     volume_changer,
@@ -1243,9 +1250,7 @@ pub(crate) fn on_voice_quality_change(req: &PluginRequest) -> PluginResponse {
       match param_name.as_str() {
         "speed_scale" => vq.speed_scale = (vq.speed_scale + delta).clamp(0.50, 2.00),
         "pitch_scale" => vq.pitch_scale = (vq.pitch_scale + delta).clamp(-0.15, 0.15),
-        "intonation_scale" => {
-          vq.intonation_scale = (vq.intonation_scale + delta).clamp(0.00, 2.00)
-        }
+        "intonation_scale" => vq.intonation_scale = (vq.intonation_scale + delta).clamp(0.00, 2.00),
         _ => {
           error!("Unknown voice quality parameter: {}", param_name);
         }
