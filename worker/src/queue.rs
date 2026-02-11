@@ -796,6 +796,7 @@ async fn build_segments_async(
           t.clone(),
           speaker.speaker_uuid.clone(),
           speaker.style_id,
+          speaker.voice_quality.clone(),
         )),
         Engine::BouyomiChan => Box::new(BouyomichanPredictor::new(
           t.clone(),

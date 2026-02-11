@@ -1,5 +1,6 @@
 use crate::engine::Predictor;
 use async_trait::async_trait;
+use ghost_speaker_common::VoiceQuality;
 use http::StatusCode;
 use serde::Serialize;
 
@@ -19,6 +20,24 @@ pub struct PredictRequest {
 
   #[serde(rename = "speedScale")]
   pub speed_scale: f32,
+
+  #[serde(rename = "pitchScale")]
+  pub pitch_scale: f32,
+
+  #[serde(rename = "intonationScale")]
+  pub intonation_scale: f32,
+
+  #[serde(rename = "volumeScale")]
+  pub volume_scale: f32,
+
+  #[serde(rename = "prePhonemeLength")]
+  pub pre_phoneme_length: f32,
+
+  #[serde(rename = "postPhonemeLength")]
+  pub post_phoneme_length: f32,
+
+  #[serde(rename = "outputSamplingRate")]
+  pub output_sampling_rate: i32,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,14 +56,16 @@ pub struct CoeiroinkV2Predictor {
   pub text: String,
   pub speaker_uuid: String,
   pub style_id: i32,
+  pub voice_quality: VoiceQuality,
 }
 
 impl CoeiroinkV2Predictor {
-  pub fn new(text: String, speaker_uuid: String, style_id: i32) -> Self {
+  pub fn new(text: String, speaker_uuid: String, style_id: i32, voice_quality: VoiceQuality) -> Self {
     Self {
       text,
       speaker_uuid,
       style_id,
+      voice_quality,
     }
   }
 }
@@ -52,14 +73,20 @@ impl CoeiroinkV2Predictor {
 #[async_trait]
 impl Predictor for CoeiroinkV2Predictor {
   async fn predict(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    const URL: &str = "http://localhost:50032/v1/predict";
+    const URL: &str = "http://localhost:50032/v1/synthesis";
 
     let req = PredictRequest {
       speaker_uuid: self.speaker_uuid.clone(),
       style_id: self.style_id,
       text: self.text.clone(),
       prosody_detail: None,
-      speed_scale: 1.0,
+      speed_scale: self.voice_quality.speed_scale,
+      pitch_scale: self.voice_quality.pitch_scale,
+      intonation_scale: self.voice_quality.intonation_scale,
+      volume_scale: 1.0,
+      pre_phoneme_length: 0.1,
+      post_phoneme_length: 0.1,
+      output_sampling_rate: 44100,
     };
     let b = match serde_json::to_string(&req) {
       Ok(json) => json,
