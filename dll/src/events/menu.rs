@@ -143,6 +143,17 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     );
   }
 
+  let has_bouyomichan = character_voices.iter().any(|cv| {
+    cv.as_ref()
+      .map(|v| engine_from_port(v.port) == Some(Engine::BouyomiChan))
+      .unwrap_or(false)
+  });
+  let bouyomichan_note = if has_bouyomichan {
+    " \\f[color,#dd0000]※棒読みちゃんは対象外\\f[color,default]"
+  } else {
+    ""
+  };
+
   let mut sync_balloon_setting = String::from("-");
   if let Some(si) = ghosts_voices.get(&ghost_name) {
     let switch = if si.sync_speech_to_balloon {
@@ -151,7 +162,7 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       DEACTIVATED.to_string()
     };
     sync_balloon_setting = format!(
-      "【現在 \\__q[OnSyncBalloonSettingChanged,{},{}]{}\\__q】\\n",
+      "【現在 \\__q[OnSyncBalloonSettingChanged,{},{}]{}\\__q】",
       ghost_name,
       path_for_arg,
       decorated(&switch, "bold"),
@@ -282,7 +293,7 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
       \\![*]改行で一拍おく(ゴースト別)\\n\
     {}\
       \\![*]読み上げに文章表示を合わせる(ゴースト別)\\n\
-    {}\
+    {}{}\\n\
       \\![*]デフォルト声質(共通)\\n\
     {}\
       \\n\
@@ -301,6 +312,7 @@ pub(crate) fn on_menu_exec(req: &PluginRequest) -> PluginResponse {
     punctuation_changer,
     division_setting,
     sync_balloon_setting,
+    bouyomichan_note,
     default_voice_info,
     running_count,
     total_count,
