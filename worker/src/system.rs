@@ -204,7 +204,15 @@ pub fn boot_engine(
     }
   }
 
-  Command::new(path).spawn()?;
+  {
+    use std::os::windows::process::CommandExt;
+    Command::new(path)
+      .stdin(std::process::Stdio::null())
+      .stdout(std::process::Stdio::null())
+      .stderr(std::process::Stdio::null())
+      .creation_flags(CREATE_NO_WINDOW)
+      .spawn()?;
+  }
   log::debug!("booted {}", engine.name());
   Ok(())
 }

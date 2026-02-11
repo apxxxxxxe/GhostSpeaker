@@ -109,6 +109,21 @@ fn main() {
   // キューを初期化
   queue::init_queues(&handle);
 
+  // エンジン自動起動
+  {
+    let auto_start = ENGINE_AUTO_START.read().map(|ea| ea.clone()).unwrap_or_default();
+    let engine_path = ENGINE_PATH.read().map(|ep| ep.clone()).unwrap_or_default();
+
+    for (engine, should_start) in &auto_start {
+      if *should_start {
+        match system::boot_engine(*engine, &engine_path) {
+          Ok(()) => info!("Auto-started engine: {}", engine.name()),
+          Err(e) => error!("Failed to auto-start engine {}: {}", engine.name(), e),
+        }
+      }
+    }
+  }
+
   // Init の応答を返す
   let resp = Response::Ok;
   let _ = serde_json::to_writer(&mut writer, &resp);
