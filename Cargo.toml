@@ -1,41 +1,10 @@
-[package]
-name = "ghost-speaker"
-version = "1.2.6"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-log = "0.4.17"
-simplelog = "0.12.1"
-shiorust = { git = "https://github.com/Narazaka/shiorust", version = "0.1.0" }
-shiori_hglobal = "0.3.0"
-http = "0.2.9"
-reqwest = { version = "0.11.22", features = ["blocking", "json"] }
-rodio = "0.17.1"
-serde = { version = "1.0.130", features = ["derive"] }
-tokio = { version = "1.33.0", features = ["full"] }
-once_cell = "1.18.0"
-rand = "0.8.5"
-regex = "1.10.0"
-async-std = "1.12.0"
-base64 = "0.21.4"
-encoding_rs = "0.8.33"
-sysinfo = "0.29.10"
-create_process_w = {version = "0.1.3", package = "CreateProcessW"}
-futures = "0.3.28"
-tokio-condvar = "0.1.0"
-serde_yaml = "0.9.27"
-serde_json = "1.0.108"
-async-trait = "0.1.74"
-
-[target.'cfg(windows)'.dependencies]
-winapi = {version = "0.3.9", features = ["winbase", "libloaderapi", "stringapiset"]}
-
-[lib]
-name = "ghost_speaker"
-path = "src/lib.rs"
-crate-type = ["rlib", "cdylib"]
+[workspace]
+members = [
+  "common",
+  "dll",
+  "worker",
+]
+resolver = "2"
 
 [profile.release]
 strip = true

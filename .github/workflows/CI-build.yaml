@@ -33,6 +33,7 @@ jobs:
         run: |
           cargo build --release --target=i686-pc-windows-msvc
           Copy-Item -Force -Verbose .\target\i686-pc-windows-msvc\release\${{ env.DLL_NAME }}.dll .\
+          Copy-Item -Force -Verbose .\target\i686-pc-windows-msvc\release\ghost_speaker_worker.exe .\
         shell: pwsh
       - name: disable auto crlf
         uses: steve02081504/disable-autocrlf@v1

@@ -4,3 +4,6 @@ vars.json
 vars.yaml
 profile/
 /haine
+
+.claude/
+.serena/

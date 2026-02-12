@@ -28,7 +28,10 @@ XtraStuf.mac/
 
 target/
 vars.json
-src/
+/common/
+/dll/
+/worker/
+.cargo/
 Cargo.toml
 Cargo.lock
 rustfmt.toml
