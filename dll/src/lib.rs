@@ -278,6 +278,28 @@ pub extern "cdecl" fn unload() -> BOOL {
       }
     }
 
+    // ワーカー停止前にエンジンステータスを同期
+    match send_command(&Command::GetEngineStatus) {
+      Ok(ghost_speaker_common::Response::EngineStatus {
+        engine_paths,
+        engine_auto_start,
+        ..
+      }) => {
+        if let Ok(mut ep) = ENGINE_PATH.write() {
+          *ep = engine_paths;
+        }
+        if let Ok(mut ea) = ENGINE_AUTO_START.write() {
+          *ea = engine_auto_start;
+        }
+      }
+      Ok(_) => {
+        debug!("Unexpected response from GetEngineStatus");
+      }
+      Err(e) => {
+        debug!("Failed to get engine status before shutdown: {}", e);
+      }
+    }
+
     // ワーカーを停止
     if let Err(e) = shutdown_worker() {
       error!("Failed to shutdown worker: {}", e);

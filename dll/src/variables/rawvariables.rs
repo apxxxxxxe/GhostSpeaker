@@ -9,7 +9,20 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub(crate) fn copy_from_raw(raw: &RawGlobalVariables) {
-  if let Some(p) = raw.engine_path.clone() {
+  if let Some(mut p) = raw.engine_path.clone() {
+    // Remove corrupted paths that point to the worker itself
+    p.retain(|engine, path| {
+      let is_worker = std::path::Path::new(path)
+        .file_name()
+        .is_some_and(|name| name == "ghost_speaker_worker.exe");
+      if is_worker {
+        debug!(
+          "Removing corrupted engine path for {}: points to worker executable",
+          engine.name()
+        );
+      }
+      !is_worker
+    });
     match ENGINE_PATH.write() {
       Ok(mut engine_path) => *engine_path = p,
       Err(e) => error!("Failed to write ENGINE_PATH: {}", e),

@@ -105,6 +105,19 @@ fn main() {
   }
   if let Ok(mut ep) = ENGINE_PATH.write() {
     *ep = config.engine_path;
+    // Remove corrupted paths that point to the worker itself
+    if let Ok(current_exe) = std::env::current_exe() {
+      ep.retain(|engine, path| {
+        let is_self = std::path::Path::new(path) == current_exe.as_path();
+        if is_self {
+          log::warn!(
+            "Removing corrupted engine path for {}: points to worker itself",
+            engine.name()
+          );
+        }
+        !is_self
+      });
+    }
   }
 
   // キューを初期化

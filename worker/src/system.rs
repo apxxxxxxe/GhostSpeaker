@@ -159,6 +159,11 @@ pub fn cleanup_system_cache() {
 
 // check the file exists on "C:\Windows\*"
 fn is_os_level_executable(path: &Path) -> bool {
+  if let Ok(current_exe) = std::env::current_exe() {
+    if path == current_exe.as_path() {
+      return true;
+    }
+  }
   path.starts_with("C:\\Windows\\") || path.ends_with("explorer.exe") || path.ends_with("ssp.exe")
 }
 
@@ -192,6 +197,13 @@ pub fn boot_engine(
       return Err(format!("No path found for engine: {}", engine.name()).into());
     }
   };
+
+  // prevent launching the worker itself
+  if let Ok(current_exe) = std::env::current_exe() {
+    if Path::new(path) == current_exe.as_path() {
+      return Err(format!("engine path for {} points to the worker itself", engine.name()).into());
+    }
+  }
 
   // do nothing when already booted
   let mut system = System::new();
