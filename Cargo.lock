@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "ghost-speaker"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "encoding_rs",
  "ghost-speaker-common",
@@ -448,7 +448,7 @@ dependencies = [
 
 [[package]]
 name = "ghost-speaker-worker"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "async-trait",
  "ghost-speaker-common",

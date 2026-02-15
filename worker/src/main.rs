@@ -342,6 +342,9 @@ fn handle_sync_start(text: String, ghost_name: String, state: &mut WorkerState) 
     _ => {
       // セグメント1つ以下 → 同期不要、通常モードにフォールバック
       debug!("SyncStart: segments < 2, falling back to async mode");
+      // cancel_sync_playback()で設定されたFORCE_STOP_SINKをリセット
+      // (非同期再生パスが影響を受けないようにする)
+      player::FORCE_STOP_SINK.store(false, Ordering::Release);
       push_to_prediction(text, ghost_name);
       return Response::SyncStarted {
         first_segment: None,
