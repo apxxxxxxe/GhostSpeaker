@@ -1,6 +1,6 @@
 charset,UTF-8
 file,descript.txt99c242dcdaa42b17421b81a30c2e3198size=788date=2012-12-21T00:00:00
-file,ghost_speaker.dllc4f4e5185ed46808ab8845f4c229c215size=955392date=2012-12-21T00:00:00
-file,ghost_speaker_worker.exeffb61a73f0f42ac207ee14f109b8ecdesize=4290560date=2012-12-21T00:00:00
+file,ghost_speaker.dllc4efdb7a99c9bee49601efd36bd16c0dsize=955392date=2012-12-21T00:00:00
+file,ghost_speaker_worker.exe0ce48b0dde38abbd2a95e25e99fa469esize=4290560date=2012-12-21T00:00:00
 file,install.txt5bafcf40f649f93a7d5a4dca954165f0size=73date=2012-12-21T00:00:00
 file,readme.txt6434df373abd621cfa98bbc2e6ff8bb6size=4264date=2012-12-21T00:00:00
