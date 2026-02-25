@@ -215,6 +215,34 @@ fn init_speak_queue(handle: &tokio::runtime::Handle) {
               }
             }
           }
+        } else {
+          // ポートが開いていない → エンジン未起動
+          // CURRENT_CONNECTION_STATUS が true のまま残らないよう更新する
+          {
+            let was_connected = {
+              let cs = CURRENT_CONNECTION_STATUS
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
+              cs.get(&engine).is_some_and(|v| *v)
+            };
+            if was_connected {
+              if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
+                dialogs.push(format!("{} が切断されました", engine.name()));
+              } else {
+                error!("Failed to lock CONNECTION_DIALOGS for port-closed disconnection");
+              }
+            }
+          }
+          if let Ok(mut cs) = CURRENT_CONNECTION_STATUS.write() {
+            cs.insert(engine, false);
+          } else {
+            error!("Failed to lock CURRENT_CONNECTION_STATUS for port-closed disconnect");
+          }
+          if let Ok(mut si) = SPEAKERS_INFO.write() {
+            si.remove(&engine);
+          } else {
+            error!("Failed to lock SPEAKERS_INFO for port-closed disconnect");
+          }
         }
       }
       // 1秒のスリープを100ms x 10に分割して応答性を向上
@@ -737,7 +765,8 @@ async fn build_segments_async(
               .iter()
               .any(|s| s.speaker_uuid == speaker.speaker_uuid)
           } else {
-            false
+            // エンジンが SPEAKERS_INFO にない = 切断済み → ボイスは見つからない
+            true
           }
         }
         Err(e) => {
