@@ -14,6 +14,7 @@ static SAKURA_SCRIPT_RE: Lazy<Regex> = Lazy::new(|| {
 });
 static QUICK_SECTION_TAG_RE: Lazy<Regex> =
   Lazy::new(|| Regex::new(r"(\\_q|\\!\[quicksection,(0|1|true|false)\])").unwrap());
+static V_TAG_ONLY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\\__v(\[[^\]]*\])?").unwrap());
 
 pub struct Dialog {
   pub text: String,
@@ -24,8 +25,10 @@ pub struct Dialog {
 pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
   let lines_re = &*LINES_RE;
 
-  // raw_text 用: \_qタグだけ除去しテキスト内容は保持、。挿入前
-  let raw_dialogs = split_dialog_local(strip_quick_section_tags_only(src.clone()));
+  // raw_text 用: \_qタグと\__vタグだけ除去しテキスト内容は保持、。挿入前
+  let raw_dialogs = split_dialog_local(strip_quick_section_tags_only(strip_v_tags_only(
+    src.clone(),
+  )));
 
   let mut s = delete_quick_section(src);
 
@@ -44,7 +47,7 @@ pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
     if i < raw_dialogs.len() {
       r.raw_text = raw_dialogs[i].raw_text.clone();
     }
-    r.text = clear_tags(r.text.clone());
+    r.text = clear_tags(process_v_tags_for_tts(r.text.clone()));
   }
 
   let mut result = Vec::new();
@@ -411,4 +414,212 @@ fn delete_quick_section(src: String) -> String {
 /// (delete_quick_section はタグもテキストも両方削除する)
 fn strip_quick_section_tags_only(src: String) -> String {
   QUICK_SECTION_TAG_RE.replace_all(&src, "").to_string()
+}
+
+/// \__v タグだけを除去し、タグ間のテキスト内容は保持する（raw_text 用）。
+/// 入力: "\__v[disable]しゃべらない\__v" -> 出力: "しゃべらない"
+fn strip_v_tags_only(src: String) -> String {
+  V_TAG_ONLY_RE.replace_all(&src, "").to_string()
+}
+
+/// TTS 用に \__v タグを意味的に処理する（clear_tags より前に呼ぶこと）。
+/// - \__v[disable]...\__v: 区間内テキストを削除
+/// - \__v[alternate,文字列]...\__v: 区間内テキストを文字列で置換
+/// - 未知オプションの \__v[...]: そのまま残す（clear_tags が除去）
+fn process_v_tags_for_tts(src: String) -> String {
+  const OPEN_TAG: &str = "\\__v[";
+  const CLOSE_TAG: &str = "\\__v";
+
+  let mut result = String::new();
+  let mut s = src;
+
+  loop {
+    match s.find(OPEN_TAG) {
+      None => {
+        result.push_str(&s);
+        break;
+      }
+      Some(open_pos) => {
+        let before = &s[..open_pos];
+        let rest = &s[open_pos + OPEN_TAG.len()..];
+
+        if rest.starts_with("disable]") {
+          // \__v[disable]...\__v: 区間内テキストを削除
+          result.push_str(before);
+          let after_tag = &rest["disable]".len()..];
+          if let Some(close_pos) = after_tag.find(CLOSE_TAG) {
+            s = after_tag[close_pos + CLOSE_TAG.len()..].to_string();
+          } else {
+            break;
+          }
+        } else if rest.starts_with("alternate,") {
+          // \__v[alternate,文字列]...\__v: 区間内テキストを文字列で置換
+          if let Some(bracket_end) = rest.find(']') {
+            let alternate = &rest["alternate,".len()..bracket_end];
+            result.push_str(before);
+            result.push_str(alternate);
+            let after_tag = &rest[bracket_end + 1..];
+            if let Some(close_pos) = after_tag.find(CLOSE_TAG) {
+              s = after_tag[close_pos + CLOSE_TAG.len()..].to_string();
+            } else {
+              break;
+            }
+          } else {
+            // 閉じ括弧なし: 不正なタグはそのまま残す
+            result.push_str(before);
+            result.push_str(OPEN_TAG);
+            s = rest.to_string();
+          }
+        } else {
+          // 未知オプション: そのまま残す（clear_tags が除去）
+          result.push_str(before);
+          result.push_str(OPEN_TAG);
+          s = rest.to_string();
+        }
+      }
+    }
+  }
+
+  result
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  // --- process_v_tags_for_tts ---
+
+  #[test]
+  fn v_disable_removes_content() {
+    let input = r"\__v[disable]しゃべらない\__v".to_string();
+    assert_eq!(process_v_tags_for_tts(input), "");
+  }
+
+  #[test]
+  fn v_disable_preserves_surrounding_text() {
+    let input = r"前\__v[disable]しゃべらない\__v後".to_string();
+    assert_eq!(process_v_tags_for_tts(input), "前後");
+  }
+
+  #[test]
+  fn v_alternate_replaces_content() {
+    let input = r"\__v[alternate,だいのじ]大の字\__v".to_string();
+    assert_eq!(process_v_tags_for_tts(input), "だいのじ");
+  }
+
+  #[test]
+  fn v_alternate_preserves_surrounding_text() {
+    let input = r"前\__v[alternate,だいのじ]大の字\__v後".to_string();
+    assert_eq!(process_v_tags_for_tts(input), "前だいのじ後");
+  }
+
+  #[test]
+  fn v_alternate_hiragana_reading() {
+    let input = r"\__v[alternate,きょうはいいてんきですね]今日は良い天気ですね\__v".to_string();
+    assert_eq!(process_v_tags_for_tts(input), "きょうはいいてんきですね");
+  }
+
+  #[test]
+  fn v_no_closing_tag_removes_rest() {
+    // 閉じタグなし: disableは残り全部削除
+    let input = r"前\__v[disable]しゃべらない".to_string();
+    assert_eq!(process_v_tags_for_tts(input), "前");
+  }
+
+  #[test]
+  fn v_no_closing_tag_alternate_uses_alternate() {
+    // 閉じタグなし: alternateは代替テキストを出力して残りは削除
+    let input = r"前\__v[alternate,よみ]元".to_string();
+    assert_eq!(process_v_tags_for_tts(input), "前よみ");
+  }
+
+  #[test]
+  fn v_multiple_disable_segments() {
+    let input = r"A\__v[disable]X\__vB\__v[disable]Y\__vC".to_string();
+    assert_eq!(process_v_tags_for_tts(input), "ABC");
+  }
+
+  #[test]
+  fn v_multiple_alternate_segments() {
+    let input = r"\__v[alternate,あ]A\__v\__v[alternate,い]I\__v".to_string();
+    assert_eq!(process_v_tags_for_tts(input), "あい");
+  }
+
+  #[test]
+  fn v_no_tag_unchanged() {
+    let input = "タグなしテキスト".to_string();
+    assert_eq!(process_v_tags_for_tts(input.clone()), input);
+  }
+
+  #[test]
+  fn v_unknown_option_kept_for_clear_tags() {
+    // 未知オプションはそのまま残す（clear_tags が除去する）
+    let input = r"\__v[unknown]テキスト\__v".to_string();
+    let result = process_v_tags_for_tts(input);
+    assert!(result.contains(r"\__v[unknown]"));
+  }
+
+  // --- strip_v_tags_only ---
+
+  #[test]
+  fn strip_v_removes_disable_tag() {
+    let input = r"\__v[disable]しゃべらない\__v".to_string();
+    assert_eq!(strip_v_tags_only(input), "しゃべらない");
+  }
+
+  #[test]
+  fn strip_v_removes_alternate_tag() {
+    let input = r"\__v[alternate,だいのじ]大の字\__v".to_string();
+    assert_eq!(strip_v_tags_only(input), "大の字");
+  }
+
+  #[test]
+  fn strip_v_removes_closing_tag() {
+    // 単独の閉じタグ
+    let input = r"テキスト\__v".to_string();
+    assert_eq!(strip_v_tags_only(input), "テキスト");
+  }
+
+  #[test]
+  fn strip_v_preserves_surrounding_text() {
+    let input = r"前\__v[disable]内容\__v後".to_string();
+    assert_eq!(strip_v_tags_only(input), "前内容後");
+  }
+
+  // --- split_dialog との統合 ---
+
+  #[test]
+  fn split_dialog_disable_removes_from_text() {
+    let input = r"\1\__v[disable]しゃべらない。\__vしゃべる。".to_string();
+    let dialogs = split_dialog(input, false);
+    assert_eq!(dialogs.len(), 1);
+    assert_eq!(dialogs[0].text, "しゃべる。");
+  }
+
+  #[test]
+  fn split_dialog_disable_keeps_in_raw_text() {
+    let input = r"\1\__v[disable]しゃべらない。\__vしゃべる。".to_string();
+    let dialogs = split_dialog(input, false);
+    assert_eq!(dialogs.len(), 1);
+    // raw_text はタグを除いた元のテキストを保持する
+    assert!(dialogs[0].raw_text.contains("しゃべらない。"));
+    assert!(dialogs[0].raw_text.contains("しゃべる。"));
+  }
+
+  #[test]
+  fn split_dialog_alternate_replaces_in_text() {
+    let input = r"\1\__v[alternate,だいのじ]大の字\__vになって寝た。".to_string();
+    let dialogs = split_dialog(input, false);
+    assert_eq!(dialogs.len(), 1);
+    assert_eq!(dialogs[0].text, "だいのじになって寝た。");
+  }
+
+  #[test]
+  fn split_dialog_alternate_keeps_original_in_raw_text() {
+    let input = r"\1\__v[alternate,だいのじ]大の字\__vになって寝た。".to_string();
+    let dialogs = split_dialog(input, false);
+    assert_eq!(dialogs.len(), 1);
+    assert!(dialogs[0].raw_text.contains("大の字"));
+    assert!(dialogs[0].raw_text.contains("になって寝た。"));
+  }
 }

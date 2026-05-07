@@ -125,7 +125,10 @@ fn main() {
 
   // エンジン自動起動
   {
-    let auto_start = ENGINE_AUTO_START.read().map(|ea| ea.clone()).unwrap_or_default();
+    let auto_start = ENGINE_AUTO_START
+      .read()
+      .map(|ea| ea.clone())
+      .unwrap_or_default();
     let engine_path = ENGINE_PATH.read().map(|ep| ep.clone()).unwrap_or_default();
 
     for (engine, should_start) in &auto_start {

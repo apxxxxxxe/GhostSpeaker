@@ -10,10 +10,7 @@ const MAX_AUDIO_PLAY_TIME: Duration = Duration::from_secs(60);
 
 pub static FORCE_STOP_SINK: AtomicBool = AtomicBool::new(false);
 
-pub fn play_wav(
-  wav: Vec<u8>,
-  volume: f32,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn play_wav(wav: Vec<u8>, volume: f32) -> Result<(), Box<dyn std::error::Error>> {
   let (_stream, handle) = OutputStream::try_default()?;
   let sink = Sink::try_new(&handle)?;
   sink.set_volume(volume);

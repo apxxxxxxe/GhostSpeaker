@@ -881,10 +881,8 @@ pub fn spawn_sync_playback(wav: Vec<u8>, volume: f32, handle: &tokio::runtime::H
   crate::player::FORCE_STOP_SINK.store(false, Ordering::Release);
   let task_handle = handle.spawn(async move {
     if !wav.is_empty() {
-      match tokio::task::spawn_blocking(move || {
-        play_wav(wav, volume).map_err(|e| e.to_string())
-      })
-      .await
+      match tokio::task::spawn_blocking(move || play_wav(wav, volume).map_err(|e| e.to_string()))
+        .await
       {
         Ok(Ok(())) => {}
         Ok(Err(e)) => error!("sync play_wav failed: {}", e),

@@ -201,7 +201,13 @@ pub fn boot_engine(
   // prevent launching the worker itself
   if let Ok(current_exe) = std::env::current_exe() {
     if Path::new(path) == current_exe.as_path() {
-      return Err(format!("engine path for {} points to the worker itself", engine.name()).into());
+      return Err(
+        format!(
+          "engine path for {} points to the worker itself",
+          engine.name()
+        )
+        .into(),
+      );
     }
   }
 

@@ -60,7 +60,12 @@ pub struct CoeiroinkV2Predictor {
 }
 
 impl CoeiroinkV2Predictor {
-  pub fn new(text: String, speaker_uuid: String, style_id: i32, voice_quality: VoiceQuality) -> Self {
+  pub fn new(
+    text: String,
+    speaker_uuid: String,
+    style_id: i32,
+    voice_quality: VoiceQuality,
+  ) -> Self {
     Self {
       text,
       speaker_uuid,
