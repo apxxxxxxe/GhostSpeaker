@@ -52,11 +52,15 @@ pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
 
   let mut result = Vec::new();
   let mut accumulated_prefix = String::new();
+  let mut accumulated_scope = 0;
+  let mut accumulated_has_raw = false;
   for r in raws {
     if r.text.is_empty() {
       // scopeタグ + raw_textを累積して次の非空Dialogに引き継ぐ
       accumulated_prefix.push_str(&scope_to_tag(r.scope));
       accumulated_prefix.push_str(&r.raw_text);
+      accumulated_scope = r.scope;
+      accumulated_has_raw |= !r.raw_text.is_empty();
       continue;
     }
     let raw_text = if accumulated_prefix.is_empty() {
@@ -71,12 +75,23 @@ pub fn split_dialog(src: String, devide_by_lines: bool) -> Vec<Dialog> {
     // 以前は\0で分割していたが、各サブDialogが同じraw_textを共有してしまい、
     // split_by_punctuation_with_rawのアライメントが不正になっていた。
     if !r.text.is_empty() {
+      accumulated_has_raw = false;
       result.push(Dialog {
         text: r.text.clone(),
         raw_text,
         scope: r.scope,
       });
     }
+  }
+  // 末尾に非空Dialogが続かない場合、累積したprefixが引き継ぎ先を失って消えてしまう。
+  // 表示用テキスト(クイックセクション内の文章など)が含まれるため、
+  // text空の表示専用Dialogとして残す(読み上げ対象にはならない)。
+  if accumulated_has_raw {
+    result.push(Dialog {
+      text: String::new(),
+      raw_text: accumulated_prefix,
+      scope: accumulated_scope,
+    });
   }
   result
 }
@@ -612,6 +627,39 @@ mod tests {
     let dialogs = split_dialog(input, false);
     assert_eq!(dialogs.len(), 1);
     assert_eq!(dialogs[0].text, "だいのじになって寝た。");
+  }
+
+  // --- 末尾の表示専用Dialog（同期モードのバルーン表示用） ---
+
+  #[test]
+  fn split_dialog_keeps_trailing_quicksection_text_as_display_only() {
+    // 末尾がクイックセクション内のテキストのみの場合、
+    // 読み上げ対象ではないが表示用テキストとして残す
+    let input = r"\p[0]好きに使って\![quicksection,0]\p[1]\c\![quicksection,1]\f[bold,1]カテゴリが解放された。\f[default]".to_string();
+    let dialogs = split_dialog(input, false);
+    let last = dialogs.last().unwrap();
+    assert_eq!(last.text, "");
+    assert_eq!(last.scope, 1);
+    assert!(last.raw_text.contains("カテゴリが解放された。"));
+  }
+
+  #[test]
+  fn split_dialog_no_trailing_display_only_when_raw_is_empty() {
+    // 末尾のスコープ変更タグだけの場合は表示専用Dialogを作らない
+    let input = r"\p[0]おはよう。\p[1]".to_string();
+    let dialogs = split_dialog(input, false);
+    assert_eq!(dialogs.len(), 1);
+    assert_eq!(dialogs[0].text, "おはよう。");
+  }
+
+  #[test]
+  fn split_dialog_trailing_prefix_is_not_duplicated() {
+    // 累積prefixが非空Dialogに引き継がれた後は、末尾に重複して出力しない
+    let input = r"\p[0]\![quicksection,1]表示のみ\![quicksection,0]\p[1]しゃべる。".to_string();
+    let dialogs = split_dialog(input, false);
+    assert_eq!(dialogs.len(), 1);
+    assert!(dialogs[0].raw_text.contains("表示のみ"));
+    assert!(dialogs[0].raw_text.contains("しゃべる。"));
   }
 
   #[test]

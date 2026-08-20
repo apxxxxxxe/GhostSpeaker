@@ -732,8 +732,24 @@ async fn build_segments_async(
   };
   // ここではすべてのstd::sync::RwLockガードがドロップ済み
 
+  // 同期モードでは読み上げ対象外のテキストもバルーンに表示する必要があるため、
+  // 音声なし(NoOpPredictor)の表示専用セグメントとして積む
+  let push_display_only = |segments: &mut Vec<SyncSegment>, raw_text: String, scope: usize| {
+    segments.push(SyncSegment {
+      text: String::new(),
+      raw_text,
+      scope,
+      predictor: Box::new(NoOpPredictor),
+      volume,
+    });
+  };
+
   for dialog in split_dialog(text, devide_by_lines) {
     if dialog.text.is_empty() {
+      // 読み上げるテキストはないが、バルーンに表示すべき内容は残っている場合がある
+      if sync_mode && !dialog.raw_text.is_empty() {
+        push_display_only(&mut segments, dialog.raw_text, dialog.scope);
+      }
       continue;
     }
 
@@ -749,38 +765,40 @@ async fn build_segments_async(
       None => initial_voice.clone(),
     };
 
-    if speaker.speaker_uuid == NO_VOICE_UUID {
-      continue;
-    }
     let play_volume = volume;
-    let voice_not_found = {
-      let engine = match engine_from_port(speaker.port) {
-        Some(e) => e,
-        None => continue,
-      };
-      match SPEAKERS_INFO.read() {
-        Ok(si) => {
-          if let Some(speakers_by_engine) = si.get(&engine) {
-            !speakers_by_engine
-              .iter()
-              .any(|s| s.speaker_uuid == speaker.speaker_uuid)
-          } else {
-            // エンジンが SPEAKERS_INFO にない = 切断済み → ボイスは見つからない
-            true
+    // 読み上げに使うエンジンを解決する。解決できない場合は読み上げをスキップする
+    let resolved_engine = if speaker.speaker_uuid == NO_VOICE_UUID {
+      None
+    } else {
+      engine_from_port(speaker.port).filter(|engine| {
+        let voice_not_found = match SPEAKERS_INFO.read() {
+          Ok(si) => {
+            if let Some(speakers_by_engine) = si.get(engine) {
+              !speakers_by_engine
+                .iter()
+                .any(|s| s.speaker_uuid == speaker.speaker_uuid)
+            } else {
+              // エンジンが SPEAKERS_INFO にない = 切断済み → ボイスは見つからない
+              true
+            }
           }
-        }
-        Err(e) => {
-          error!("Failed to read SPEAKERS_INFO: {}", e);
-          false
-        }
-      }
+          Err(e) => {
+            error!("Failed to read SPEAKERS_INFO: {}", e);
+            false
+          }
+        };
+        !voice_not_found
+      })
     };
-    if voice_not_found {
-      continue;
-    }
-    let engine = match engine_from_port(speaker.port) {
+    let engine = match resolved_engine {
       Some(e) => e,
-      None => continue,
+      None => {
+        // 同期モード: 読み上げない場合でもバルーン表示は行う
+        if sync_mode && !dialog.raw_text.is_empty() {
+          push_display_only(&mut segments, dialog.raw_text, dialog.scope);
+        }
+        continue;
+      }
     };
     let pairs = if (speak_by_punctuation_val || sync_mode) && engine != Engine::BouyomiChan {
       let p = split_by_punctuation_with_raw(dialog.text.clone(), dialog.raw_text.clone());
@@ -800,13 +818,7 @@ async fn build_segments_async(
       if t.is_empty() {
         if sync_mode && !rt.is_empty() {
           // 同期モード: バルーン表示のみ（音声なし）
-          segments.push(SyncSegment {
-            text: t,
-            raw_text: rt,
-            scope: dialog.scope,
-            predictor: Box::new(NoOpPredictor),
-            volume: play_volume,
-          });
+          push_display_only(&mut segments, rt, dialog.scope);
         }
         continue;
       }
