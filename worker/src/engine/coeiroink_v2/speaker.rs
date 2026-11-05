@@ -73,7 +73,9 @@ impl SpeakerGetter for CoeiroinkV2SpeakerGetter {
         res.text().await?
       }
       Err(e) => {
-        log::error!("Failed to get speakers info: {}", e);
+        if !e.is_connect() {
+          log::error!("Failed to get speakers info: {}", e);
+        }
         return Err(Box::new(e));
       }
     };

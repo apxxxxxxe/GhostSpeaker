@@ -1,7 +1,9 @@
 use crate::engine::bouyomichan::predict::BouyomichanPredictor;
 use crate::engine::coeiroink_v2::predict::CoeiroinkV2Predictor;
 use crate::engine::voicevox_family::predict::VoicevoxFamilyPredictor;
-use crate::engine::{get_speaker_getters, NoOpPredictor, Predictor};
+use crate::engine::{
+  get_speaker_getters, is_engine_absent, NoOpPredictor, Predictor, SpeakerGetter,
+};
 use crate::format::{
   is_ellipsis_segment, resplit_pairs_by_raw_ellipsis, split_by_punctuation_with_raw, split_dialog,
 };
@@ -105,154 +107,217 @@ static SYNC_PLAYBACK_HANDLER: Lazy<StdMutex<Option<tokio::task::JoinHandle<()>>>
 
 // --- キュー初期化 ---
 
+/// 応答異常がこの回数続いたら、再試行の間隔を広げる
+const BACKOFF_FAILURE_THRESHOLD: u32 = 10;
+const MAX_BACKOFF_SECS: u64 = 60;
+/// 接続中にパスを再探索する間隔（ポーリング回数）
+const PATH_RETRY_POLLS: u32 = 30;
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+/// 連続失敗回数に応じた待機秒数（上限つき、オーバーフローしない）
+fn backoff_secs(failures: u32) -> u64 {
+  if failures < BACKOFF_FAILURE_THRESHOLD {
+    return 0;
+  }
+  2u64.saturating_pow(failures / 5).min(MAX_BACKOFF_SECS)
+}
+
+/// 停止要求が来るまで待つ
+async fn wait_for_speak_queue_stop() {
+  while !SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
+    tokio::time::sleep(Duration::from_millis(100)).await;
+  }
+}
+
+/// 停止要求に反応できる sleep。停止要求で中断された場合は false を返す
+async fn sleep_unless_stopped(duration: Duration) -> bool {
+  tokio::select! {
+    _ = tokio::time::sleep(duration) => true,
+    _ = wait_for_speak_queue_stop() => false,
+  }
+}
+
+fn push_connection_dialog(message: String) {
+  match CONNECTION_DIALOGS.lock() {
+    Ok(mut dialogs) => dialogs.push(message),
+    Err(e) => error!("Failed to lock CONNECTION_DIALOGS: {}", e),
+  }
+}
+
+/// エンジンのパスを登録し、自動起動を設定できる状態にする
+fn register_engine_path(engine: Engine, path: String) {
+  match ENGINE_PATH.write() {
+    Ok(mut ep) => {
+      ep.insert(engine, path);
+    }
+    Err(e) => error!("Failed to lock ENGINE_PATH for {}: {}", engine.name(), e),
+  }
+  ensure_auto_start_entry(engine);
+}
+
+fn ensure_auto_start_entry(engine: Engine) {
+  match ENGINE_AUTO_START.write() {
+    Ok(mut auto_start) => {
+      auto_start.entry(engine).or_insert(false);
+    }
+    Err(e) => error!(
+      "Failed to lock ENGINE_AUTO_START for {}: {}",
+      engine.name(),
+      e
+    ),
+  }
+}
+
+fn has_engine_path(engine: Engine) -> bool {
+  ENGINE_PATH
+    .read()
+    .map(|ep| ep.contains_key(&engine))
+    .unwrap_or(false)
+}
+
+fn is_connected(engine: Engine) -> bool {
+  CURRENT_CONNECTION_STATUS
+    .read()
+    .unwrap_or_else(|e| e.into_inner())
+    .get(&engine)
+    .is_some_and(|v| *v)
+}
+
+fn mark_connected(engine: Engine, speakers_info: Vec<SpeakerInfo>) {
+  if let Ok(mut cs) = CURRENT_CONNECTION_STATUS.write() {
+    cs.insert(engine, true);
+  } else {
+    error!(
+      "Failed to lock CURRENT_CONNECTION_STATUS for engine: {}",
+      engine.name()
+    );
+  }
+  if let Ok(mut si) = SPEAKERS_INFO.write() {
+    si.insert(engine, speakers_info);
+  } else {
+    error!("Failed to lock SPEAKERS_INFO for engine: {}", engine.name());
+  }
+}
+
+fn mark_disconnected(engine: Engine) {
+  if is_connected(engine) {
+    push_connection_dialog(format!("{} が切断されました", engine.name()));
+  }
+  if let Ok(mut cs) = CURRENT_CONNECTION_STATUS.write() {
+    cs.insert(engine, false);
+  } else {
+    error!("Failed to lock CURRENT_CONNECTION_STATUS for disconnect");
+  }
+  if let Ok(mut si) = SPEAKERS_INFO.write() {
+    si.remove(&engine);
+  } else {
+    error!("Failed to lock SPEAKERS_INFO for disconnect");
+  }
+}
+
+/// netstat でパスの特定を試みる。特定できなければ既存のパスを維持する
+async fn discover_engine_path(engine: Engine) -> bool {
+  let Ok(port) = u16::try_from(engine.port()) else {
+    error!("Invalid port for engine: {}", engine.name());
+    return false;
+  };
+  match get_port_opener_path(port, &SHUTTING_DOWN).await {
+    Some(path) => {
+      register_engine_path(engine, path);
+      true
+    }
+    None => false,
+  }
+}
+
+/// 1エンジン分の接続監視。接続状態の判定はHTTP応答のみで行う
+async fn poll_engine(engine: Engine, getter: Box<dyn SpeakerGetter + Send + Sync>) {
+  let mut failures: u32 = 0;
+  let mut polls_since_path_check: u32 = 0;
+
+  while !SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
+    // 未起動ポートへの接続は失敗まで2秒以上かかるため、停止要求で中断できるようにする
+    let result = tokio::select! {
+      r = getter.get_speakers_info() => r,
+      _ = wait_for_speak_queue_stop() => break,
+    };
+
+    let mut wait = POLL_INTERVAL;
+    match result {
+      Ok(speakers_info) => {
+        failures = 0;
+        let newly_connected = !is_connected(engine);
+        if newly_connected {
+          push_connection_dialog(format!("{} が接続されました", engine.name()));
+        }
+        mark_connected(engine, speakers_info);
+
+        let has_path = has_engine_path(engine);
+        polls_since_path_check = polls_since_path_check.saturating_add(1);
+        // 接続が確立している今なら、エンジン側の行から所有プロセスを特定できる
+        let should_look_up =
+          newly_connected || (!has_path && polls_since_path_check >= PATH_RETRY_POLLS);
+        if should_look_up {
+          polls_since_path_check = 0;
+          let found = discover_engine_path(engine).await;
+          if !found {
+            warn!("Could not determine executable path for {}", engine.name());
+          }
+          if has_path {
+            // パスが取れなくても、既存のパスで自動起動を続けられる
+            ensure_auto_start_entry(engine);
+          }
+        }
+      }
+      Err(e) if is_engine_absent(e.as_ref()) => {
+        // 接続が拒否された = エンジン未起動。平常時の状態なので失敗として数えない
+        failures = 0;
+        mark_disconnected(engine);
+      }
+      Err(e) => {
+        failures = failures.saturating_add(1);
+        error!(
+          "Error from {}: {} (consecutive failures: {})",
+          engine.name(),
+          e,
+          failures
+        );
+        mark_disconnected(engine);
+        let backoff = backoff_secs(failures);
+        if backoff > 0 {
+          warn!(
+            "Too many consecutive failures for {}, backing off {}s",
+            engine.name(),
+            backoff
+          );
+          wait = Duration::from_secs(backoff);
+        }
+      }
+    }
+
+    if !sleep_unless_stopped(wait).await {
+      break;
+    }
+  }
+}
+
 fn init_speak_queue(handle: &tokio::runtime::Handle) {
   let speaker_getters = get_speaker_getters();
   let handler = handle.spawn(async move {
-    // エンジンごとの連続失敗カウンタ
-    let mut consecutive_failures: HashMap<Engine, u32> = HashMap::new();
-    const MAX_CONSECUTIVE_FAILURES: u32 = 10;
-    const BACKOFF_BASE: u64 = 2;
-
-    loop {
-      // 停止チェック
-      if SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
-        debug!("Speak queue stopping");
-        break;
-      }
-
-      // 全エンジンを順番にチェック
-      for (engine, getter) in &speaker_getters {
-        let engine = *engine;
-        if SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
-          break;
+    // エンジンごとに独立して監視し、応答しないエンジンが他を止めないようにする。
+    // この親タスクがabortされると JoinSet の drop で子タスクもabortされる。
+    let mut tasks = tokio::task::JoinSet::new();
+    for (engine, getter) in speaker_getters {
+      tasks.spawn(poll_engine(engine, getter));
+    }
+    while let Some(result) = tasks.join_next().await {
+      if let Err(e) = result {
+        if !e.is_cancelled() {
+          error!("Engine polling task failed: {}", e);
         }
-        if let Some(port_opener_path) =
-          get_port_opener_path(format!("{}", engine.port()), &SHUTTING_DOWN).await
-        {
-          match getter.get_speakers_info().await {
-            Ok(speakers_info) => {
-              consecutive_failures.insert(engine, 0);
-              let was_disconnected = {
-                let cs = CURRENT_CONNECTION_STATUS
-                  .read()
-                  .unwrap_or_else(|e| e.into_inner());
-                cs.get(&engine).is_none() || cs.get(&engine).is_some_and(|v| !*v)
-              };
-              if was_disconnected {
-                if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
-                  dialogs.push(format!("{} が接続されました", engine.name()));
-                } else {
-                  error!("Failed to lock CONNECTION_DIALOGS for connection message");
-                }
-                if let Ok(mut ep) = ENGINE_PATH.write() {
-                  ep.insert(engine, port_opener_path);
-                } else {
-                  error!("Failed to lock ENGINE_PATH for engine: {}", engine.name());
-                }
-                if let Ok(mut auto_start) = ENGINE_AUTO_START.write() {
-                  if auto_start.get(&engine).is_none() {
-                    auto_start.insert(engine, false);
-                  }
-                } else {
-                  error!(
-                    "Failed to lock ENGINE_AUTO_START for engine: {}",
-                    engine.name()
-                  );
-                }
-              }
-              if let Ok(mut cs) = CURRENT_CONNECTION_STATUS.write() {
-                cs.insert(engine, true);
-              } else {
-                error!(
-                  "Failed to lock CURRENT_CONNECTION_STATUS for engine: {}",
-                  engine.name()
-                );
-              }
-              if let Ok(mut si) = SPEAKERS_INFO.write() {
-                si.insert(engine, speakers_info);
-              } else {
-                error!("Failed to lock SPEAKERS_INFO for engine: {}", engine.name());
-              }
-            }
-            Err(e) => {
-              let failures = consecutive_failures.entry(engine).or_insert(0);
-              *failures += 1;
-              error!("Error: {} (consecutive failures: {})", e, *failures);
-
-              if *failures >= MAX_CONSECUTIVE_FAILURES {
-                error!(
-                  "Too many consecutive failures for engine: {}, backing off",
-                  engine.name()
-                );
-                let backoff_time = std::cmp::min(BACKOFF_BASE.pow(*failures / 5), 60);
-                tokio::time::sleep(Duration::from_secs(backoff_time)).await;
-              }
-
-              {
-                let was_connected = {
-                  let cs = CURRENT_CONNECTION_STATUS
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner());
-                  cs.get(&engine).is_some_and(|v| *v)
-                };
-                if was_connected {
-                  if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
-                    dialogs.push(format!("{} が切断されました", engine.name()));
-                  } else {
-                    error!("Failed to lock CONNECTION_DIALOGS for disconnection message");
-                  }
-                }
-              }
-              if let Ok(mut cs) = CURRENT_CONNECTION_STATUS.write() {
-                cs.insert(engine, false);
-              } else {
-                error!("Failed to lock CURRENT_CONNECTION_STATUS for disconnect");
-              }
-              if let Ok(mut si) = SPEAKERS_INFO.write() {
-                si.remove(&engine);
-              } else {
-                error!("Failed to lock SPEAKERS_INFO for disconnect");
-              }
-            }
-          }
-        } else {
-          // ポートが開いていない → エンジン未起動
-          // CURRENT_CONNECTION_STATUS が true のまま残らないよう更新する
-          {
-            let was_connected = {
-              let cs = CURRENT_CONNECTION_STATUS
-                .read()
-                .unwrap_or_else(|e| e.into_inner());
-              cs.get(&engine).is_some_and(|v| *v)
-            };
-            if was_connected {
-              if let Ok(mut dialogs) = CONNECTION_DIALOGS.lock() {
-                dialogs.push(format!("{} が切断されました", engine.name()));
-              } else {
-                error!("Failed to lock CONNECTION_DIALOGS for port-closed disconnection");
-              }
-            }
-          }
-          if let Ok(mut cs) = CURRENT_CONNECTION_STATUS.write() {
-            cs.insert(engine, false);
-          } else {
-            error!("Failed to lock CURRENT_CONNECTION_STATUS for port-closed disconnect");
-          }
-          if let Ok(mut si) = SPEAKERS_INFO.write() {
-            si.remove(&engine);
-          } else {
-            error!("Failed to lock SPEAKERS_INFO for port-closed disconnect");
-          }
-        }
-      }
-      // 1秒のスリープを100ms x 10に分割して応答性を向上
-      for _ in 0..10 {
-        if SPEAK_QUEUE_STOPPER.load(Ordering::Acquire) {
-          break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
       }
     }
+    debug!("Speak queue stopped");
   });
   match SPEAK_HANDLER.lock() {
     Ok(mut guard) => *guard = Some(handler),
@@ -1066,6 +1131,48 @@ mod tests {
       predictor: Box::new(NoOpPredictor),
       volume: 1.0,
     }
+  }
+
+  #[test]
+  fn backoff_is_zero_below_threshold() {
+    assert_eq!(backoff_secs(0), 0);
+    assert_eq!(backoff_secs(BACKOFF_FAILURE_THRESHOLD - 1), 0);
+  }
+
+  #[test]
+  fn backoff_grows_and_stays_capped_without_overflow() {
+    assert_eq!(backoff_secs(10), 4);
+    assert_eq!(backoff_secs(15), 8);
+    assert_eq!(backoff_secs(320), MAX_BACKOFF_SECS);
+    assert_eq!(backoff_secs(u32::MAX), MAX_BACKOFF_SECS);
+  }
+
+  #[test]
+  fn not_running_error_counts_as_absent() {
+    let e: Box<dyn std::error::Error + Send + Sync> =
+      Box::new(crate::engine::EngineNotRunning("x.exe"));
+    assert!(is_engine_absent(e.as_ref()));
+  }
+
+  #[test]
+  fn other_errors_are_not_absent() {
+    let e: Box<dyn std::error::Error + Send + Sync> = "broken response".into();
+    assert!(!is_engine_absent(e.as_ref()));
+  }
+
+  #[tokio::test]
+  async fn connection_refused_counts_as_absent_after_boxing() {
+    // 実際に閉じているポートへの接続エラーが、Box化後も未起動と判定されること
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let err = reqwest::Client::new()
+      .get(format!("http://127.0.0.1:{}/", port))
+      .send()
+      .await
+      .unwrap_err();
+    let boxed: Box<dyn std::error::Error + Send + Sync> = Box::new(err);
+    assert!(is_engine_absent(boxed.as_ref()));
   }
 
   #[test]

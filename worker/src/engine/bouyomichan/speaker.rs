@@ -1,9 +1,9 @@
-use crate::engine::SpeakerGetter;
+use crate::engine::{EngineNotRunning, SpeakerGetter};
 use async_trait::async_trait;
 use ghost_speaker_common::{Engine, SpeakerInfo, Style};
-use sysinfo::{ProcessExt, System, SystemExt};
 
 pub const BOUYOMICHAN_UUID: &str = "bouyomichan";
+const PROCESS_NAME: &str = "BouyomiChan.exe";
 
 pub struct BouyomiChanSpeakerGetter;
 
@@ -12,13 +12,17 @@ impl SpeakerGetter for BouyomiChanSpeakerGetter {
   async fn get_speakers_info(
     &self,
   ) -> Result<Vec<SpeakerInfo>, Box<dyn std::error::Error + Send + Sync>> {
-    let running = tokio::task::spawn_blocking(|| is_process_running("BouyomiChan.exe"))
-      .await
-      .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
-        format!("spawn_blocking failed: {}", e).into()
-      })?;
+    // HTTPを話さないポートなので接続は試さず、ポートの使用状況とプロセスの両方で判定する
+    let port = Engine::BouyomiChan.port() as u16;
+    let running = tokio::task::spawn_blocking(move || {
+      crate::system::is_port_in_use(port) && crate::system::is_process_running(PROCESS_NAME)
+    })
+    .await
+    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+      format!("spawn_blocking failed: {}", e).into()
+    })?;
     if !running {
-      return Err("BouyomiChan.exe is not running".into());
+      return Err(Box::new(EngineNotRunning(PROCESS_NAME)));
     }
 
     let speakers_info = vec![SpeakerInfo {
@@ -62,15 +66,4 @@ impl SpeakerGetter for BouyomiChanSpeakerGetter {
 
     Ok(speakers_info)
   }
-}
-
-fn is_process_running(process_name: &str) -> bool {
-  let mut system = System::new();
-  system.refresh_processes();
-  for process in system.processes_by_name(process_name) {
-    if process.name() == process_name {
-      return true;
-    }
-  }
-  false
 }

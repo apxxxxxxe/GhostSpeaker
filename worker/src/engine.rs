@@ -70,6 +70,28 @@ fn get_speaker_getter(engine: Engine) -> Box<dyn SpeakerGetter + Send + Sync> {
   }
 }
 
+/// エンジンのプロセスが動いていないことを示すエラー
+#[derive(Debug)]
+pub struct EngineNotRunning(pub &'static str);
+
+impl std::fmt::Display for EngineNotRunning {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{} is not running", self.0)
+  }
+}
+
+impl std::error::Error for EngineNotRunning {}
+
+/// エラーが「エンジン未起動」を意味するかを判定する。
+/// 接続自体が成立しなかった場合のみ true を返し、応答の異常などは false を返す。
+pub fn is_engine_absent(e: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+  if e.downcast_ref::<EngineNotRunning>().is_some() {
+    return true;
+  }
+  e.downcast_ref::<reqwest::Error>()
+    .is_some_and(|re| re.is_connect())
+}
+
 #[async_trait]
 pub trait SpeakerGetter {
   async fn get_speakers_info(
